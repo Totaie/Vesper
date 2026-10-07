@@ -38,14 +38,14 @@
             <StackPanel Spacing="8">
                 <TextBlock Text="Connection" Style="{StaticResource BodyStrongTextBlockStyle}" />
                 <RadioButtons x:Name="TransportChoice" SelectionChanged="Transport_Changed" MaxColumns="1">
-                    <RadioButton>
+                    <RadioButton AutomationProperties.Name="Apple encrypted (recommended)">
                         <StackPanel>
                             <TextBlock Text="Apple encrypted (recommended)" />
                             <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                        Text="Signs in with the Mac's own RSA identity key, which Vesper pins on first use. The whole session is AES-encrypted. Nothing else to set up." />
                         </StackPanel>
                     </RadioButton>
-                    <RadioButton>
+                    <RadioButton AutomationProperties.Name="Through an SSH tunnel">
                         <StackPanel>
                             <TextBlock Text="Through an SSH tunnel" />
                             <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"

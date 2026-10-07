@@ -49,6 +49,12 @@ public sealed class MacProfile
     /// </summary>
     public bool AllowLegacySignIn { get; set; }
 
+    /// <summary>
+    /// Set when this Mac refused Apple's RSA sign-in but accepted the same password through the
+    /// older method (only ever tried where that method is safe). Skips straight to it next time.
+    /// </summary>
+    public bool RsaSignInUnsupported { get; set; }
+
     public ColorQuality Color { get; set; } = ColorQuality.Full;
     public CodecPreference Codec { get; set; } = CodecPreference.Auto;
     public ResolutionMode Resolution { get; set; } = ResolutionMode.MatchThisDisplay;

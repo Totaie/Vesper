@@ -165,7 +165,7 @@ public sealed class RfbSession : IAsyncDisposable
                 throw new AuthenticationFailedException(
                     "The Mac didn't accept that user name and password." +
                     (detail.Length > 0 ? $" ({detail})" : "") +
-                    " If they're right, check that this account is allowed under Screen Sharing (or Remote Management) in the Mac's Sharing settings.",
+                    " If they're right, make sure this account is allowed: in the Mac's Sharing settings, click ⓘ next to Screen Sharing (or Remote Management, where \"All users\" isn't enough: add the account and allow Observe and Control).",
                     credentialsRejected: true);
             }
 

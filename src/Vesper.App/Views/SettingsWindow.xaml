@@ -47,7 +47,7 @@
                         <TextBlock Style="{StaticResource CardDescription}"
                                    Text="Session windows show up black in screenshots, screen recordings, screen sharing (Teams, Zoom) and Windows Recall, so what's on your Mac stays off other apps' records." />
                     </StackPanel>
-                    <ToggleSwitch x:Name="CaptureSwitch" Grid.Column="2" Toggled="Capture_Toggled" OnContent="" OffContent="" MinWidth="0" />
+                    <ToggleSwitch x:Name="CaptureSwitch" AutomationProperties.Name="Hide sessions from screen capture" Grid.Column="2" Toggled="Capture_Toggled" OnContent="" OffContent="" MinWidth="0" />
                 </Grid>
                 <Grid Style="{StaticResource Card}">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
@@ -57,7 +57,7 @@
                         <TextBlock x:Name="HelloDescription" Style="{StaticResource CardDescription}"
                                    Text="Saved passwords are always encrypted to your Windows account. With Hello, they're also locked behind your face, fingerprint or PIN, so another program running as you can't read them silently." />
                     </StackPanel>
-                    <ToggleSwitch x:Name="HelloSwitch" Grid.Column="2" Toggled="Hello_Toggled" OnContent="" OffContent="" MinWidth="0" />
+                    <ToggleSwitch x:Name="HelloSwitch" AutomationProperties.Name="Require Windows Hello for saved passwords" Grid.Column="2" Toggled="Hello_Toggled" OnContent="" OffContent="" MinWidth="0" />
                 </Grid>
                 <Grid Style="{StaticResource Card}">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
@@ -66,7 +66,7 @@
                         <TextBlock Text="Lock saved passwords" Style="{StaticResource CardTitle}" />
                         <TextBlock Style="{StaticResource CardDescription}" Text="Wipe unlocked passwords from memory after this long without an open session." />
                     </StackPanel>
-                    <ComboBox x:Name="LockBox" Grid.Column="2" VerticalAlignment="Center" SelectionChanged="Lock_Changed" MinWidth="170">
+                    <ComboBox x:Name="LockBox" AutomationProperties.Name="Lock saved passwords" Grid.Column="2" VerticalAlignment="Center" SelectionChanged="Lock_Changed" MinWidth="170">
                         <ComboBoxItem Content="After 5 minutes" Tag="5" />
                         <ComboBoxItem Content="After 15 minutes" Tag="15" />
                         <ComboBoxItem Content="After an hour" Tag="60" />
@@ -91,7 +91,7 @@
                         <TextBlock Text="Send Alt+Tab and the Windows key to the Mac" Style="{StaticResource CardTitle}" />
                         <TextBlock Style="{StaticResource CardDescription}" Text="Like Remote Desktop. Ctrl+Alt+Home always gives them back to Windows; Ctrl+Alt+Enter toggles full screen." />
                     </StackPanel>
-                    <ComboBox x:Name="ShortcutsBox" Grid.Column="2" VerticalAlignment="Center" SelectionChanged="Shortcuts_Changed" MinWidth="170">
+                    <ComboBox x:Name="ShortcutsBox" AutomationProperties.Name="Send Alt+Tab and the Windows key to the Mac" Grid.Column="2" VerticalAlignment="Center" SelectionChanged="Shortcuts_Changed" MinWidth="170">
                         <ComboBoxItem Content="In full screen" />
                         <ComboBoxItem Content="Always" />
                         <ComboBoxItem Content="Never" />
@@ -104,7 +104,7 @@
                         <TextBlock Text="Scroll speed" Style="{StaticResource CardTitle}" />
                         <TextBlock Style="{StaticResource CardDescription}" Text="Vesper sends the Mac precise, trackpad-like scrolls." />
                     </StackPanel>
-                    <Slider x:Name="ScrollSlider" Grid.Column="2" Width="170" Minimum="0.25" Maximum="3" StepFrequency="0.25"
+                    <Slider x:Name="ScrollSlider" AutomationProperties.Name="Scroll speed" Grid.Column="2" Width="170" Minimum="0.25" Maximum="3" StepFrequency="0.25"
                             VerticalAlignment="Center" ValueChanged="Scroll_Changed" />
                 </Grid>
 
@@ -115,7 +115,7 @@
                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
                         <TextBlock Text="Theme" Style="{StaticResource CardTitle}" />
                     </StackPanel>
-                    <ComboBox x:Name="ThemeBox" Grid.Column="2" VerticalAlignment="Center" SelectionChanged="Theme_Changed" MinWidth="170">
+                    <ComboBox x:Name="ThemeBox" AutomationProperties.Name="Theme" Grid.Column="2" VerticalAlignment="Center" SelectionChanged="Theme_Changed" MinWidth="170">
                         <ComboBoxItem Content="Use Windows setting" />
                         <ComboBoxItem Content="Dark" />
                         <ComboBoxItem Content="Light" />
@@ -128,7 +128,7 @@
                         <TextBlock Text="Show connection statistics" Style="{StaticResource CardTitle}" />
                         <TextBlock Style="{StaticResource CardDescription}" Text="Frames per second, screen updates, bandwidth and round-trip time in the session's title bar." />
                     </StackPanel>
-                    <ToggleSwitch x:Name="StatsSwitch" Grid.Column="2" Toggled="Stats_Toggled" OnContent="" OffContent="" MinWidth="0" />
+                    <ToggleSwitch x:Name="StatsSwitch" AutomationProperties.Name="Show connection statistics" Grid.Column="2" Toggled="Stats_Toggled" OnContent="" OffContent="" MinWidth="0" />
                 </Grid>
                 <Grid Style="{StaticResource Card}">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
@@ -137,7 +137,7 @@
                         <TextBlock Text="Find Macs on this network" Style="{StaticResource CardTitle}" />
                         <TextBlock Style="{StaticResource CardDescription}" Text="Listens for Macs announcing Screen Sharing on the local network. Nothing is sent anywhere." />
                     </StackPanel>
-                    <ToggleSwitch x:Name="DiscoverSwitch" Grid.Column="2" Toggled="Discover_Toggled" OnContent="" OffContent="" MinWidth="0" />
+                    <ToggleSwitch x:Name="DiscoverSwitch" AutomationProperties.Name="Find Macs on this network" Grid.Column="2" Toggled="Discover_Toggled" OnContent="" OffContent="" MinWidth="0" />
                 </Grid>
 
                 <TextBlock Text="About" Style="{StaticResource VesperSectionHeaderStyle}" Margin="2,18,0,6" />

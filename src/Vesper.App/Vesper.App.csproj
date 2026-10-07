@@ -11,6 +11,9 @@
     <UseWinUI>true</UseWinUI>
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <!-- Needed for an unpackaged app's resource index (.pri) and compiled XAML (.xbf) to be
+         published; without them the published app can't load its own pages. -->
+    <EnableMsixTooling>true</EnableMsixTooling>
     <SelfContained>true</SelfContained>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\Vesper.ico</ApplicationIcon>

@@ -17,7 +17,8 @@ public sealed record FakeMacOptions(
     bool OfferRsa,
     bool OfferDiffieHellman,
     bool Rfb38,
-    bool Verbose);
+    bool Verbose,
+    bool RejectRsaLogins = false);
 
 /// <summary>
 /// The server side of one viewer connection, speaking Apple's RFB 003.889 the way the measured
@@ -205,7 +206,13 @@ public sealed class FakeMacConnection : IAsyncDisposable
         byte[] wrapped = blob[138..(138 + rsaLength)];
         byte[] aesKey = _options.Identity.Decrypt(wrapped, RSAEncryptionPadding.Pkcs1);
         await WriteClearAsync([0, 0, 0, 0], ct); // the counted acknowledgement, empty
-        return (CheckCredentials(aesKey, credentials), aesKey);
+        bool ok = CheckCredentials(aesKey, credentials);
+        if (_options.RejectRsaLogins)
+        {
+            Log("refusing the RSA login (--reject-rsa), as a Mac that doesn't take this form would");
+            ok = false;
+        }
+        return (ok, aesKey);
     }
 
     private async Task<(bool, byte[])> DiffieHellmanAsync(CancellationToken ct)

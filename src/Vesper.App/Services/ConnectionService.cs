@@ -57,49 +57,65 @@ internal sealed class ConnectionService(AppData data)
         IProgress<ConnectStage> progress, CancellationToken ct)
     {
         progress.Report(ConnectStage.Reaching);
-        Stream stream;
-        Socket socket;
         SshTunnel? tunnel = null;
-        AuthPolicy auth;
-        Func<SignInMethod, SecuritySummary> summarize;
-
         if (profile.Transport == TransportMode.Ssh)
         {
             progress.Report(ConnectStage.SecuringTunnel);
             tunnel = await SshTunnel.OpenAsync(profile.Host, profile.SshPort, profile.Username, password,
                 new SshPin(profile, prompts, data), ct);
-            try
-            {
-                stream = await tunnel.OpenStreamAsync(profile.Port, ct);
-            }
-            catch
-            {
-                await tunnel.DisposeAsync();
-                throw;
-            }
-            socket = tunnel.Socket;
-            auth = AuthPolicy.Any; // inside a host-verified SSH tunnel, Apple's older sign-in is safe
-            summarize = _ => new SecuritySummary(SecurityLevel.Verified, "Encrypted · SSH tunnel",
-                $"Inside an SSH tunnel to the Mac ({tunnel.HostKey.FriendlyAlgorithm} host key, pinned), with Apple's AES encryption inside it.");
-        }
-        else
-        {
-            socket = await TcpConnector.ConnectAsync(profile.Host, profile.Port, TimeSpan.FromSeconds(10), ct);
-            var path = NetworkPath.Classify(socket);
-            stream = new NetworkStream(socket, ownsSocket: true);
-            auth = path.IsEncrypted || profile.AllowLegacySignIn ? AuthPolicy.Any : AuthPolicy.RsaOnly;
-            summarize = method => (method, path.Kind) switch
-            {
-                (SignInMethod.AppleRsa, _) => new SecuritySummary(SecurityLevel.Verified, "Encrypted · identity verified",
-                    "Signed in with the Mac's pinned RSA identity key; the whole session is encrypted with AES-128."),
-                (_, NetworkPathKind.WireGuardVpn) => new SecuritySummary(SecurityLevel.Protected, $"Encrypted · {path.Description}",
-                    $"Inside {path.Description}, with Apple's AES encryption inside that."),
-                (_, NetworkPathKind.Loopback) => new SecuritySummary(SecurityLevel.Protected, "Encrypted · this PC", "A connection to this PC."),
-                _ => new SecuritySummary(SecurityLevel.Unverified, "Encrypted · identity not verified",
-                    "Apple's older sign-in protects against eavesdropping but can't prove this is your Mac. Use an SSH tunnel or a VPN for full protection."),
-            };
         }
 
+        try
+        {
+            var (stream, socket, path) = await OpenTransportAsync(profile, tunnel, ct);
+            // Apple's older Diffie-Hellman sign-in can't prove who's answering, so it's only used
+            // where something else does: an SSH tunnel with a pinned host key, a WireGuard VPN,
+            // this PC, or a Mac the user explicitly allowed it for.
+            bool dhSafe = tunnel is not null || path.IsEncrypted || profile.AllowLegacySignIn;
+            var auth = !dhSafe ? AuthPolicy.RsaOnly
+                : profile.RsaSignInUnsupported ? new AuthPolicy(AllowRsa: false, AllowDiffieHellman: true)
+                : AuthPolicy.Any;
+
+            RfbSession session;
+            try
+            {
+                session = await StartSessionAsync(profile, password, pcPixelsPerDip, prompts, progress, stream, socket, auth, ct);
+            }
+            catch (AuthenticationFailedException e) when (e.CredentialsRejected && dhSafe && auth.AllowRsa)
+            {
+                // A Mac reports a refused RSA login exactly like a wrong password. Where the older
+                // method is safe, try it once: if the same password works there, this Mac doesn't
+                // take Vesper's RSA login, and it's remembered.
+                Diagnostics.Add($"RSA sign-in to {profile.Host} was refused; trying Apple's older sign-in once.");
+                (stream, socket, path) = await OpenTransportAsync(profile, tunnel, ct);
+                session = await StartSessionAsync(profile, password, pcPixelsPerDip, prompts, progress, stream, socket,
+                    new AuthPolicy(AllowRsa: false, AllowDiffieHellman: true), ct);
+                Persist(profile, data, p => p.RsaSignInUnsupported = true);
+                profile.RsaSignInUnsupported = true;
+            }
+            return new ConnectedMac(session, tunnel, socket, Summarize(session.Info.SignIn, path, tunnel));
+        }
+        catch
+        {
+            if (tunnel is not null) await tunnel.DisposeAsync();
+            throw;
+        }
+    }
+
+    private static async Task<(Stream Stream, Socket Socket, NetworkPath Path)> OpenTransportAsync(MacProfile profile, SshTunnel? tunnel, CancellationToken ct)
+    {
+        if (tunnel is not null)
+        {
+            return (await tunnel.OpenStreamAsync(profile.Port, ct), tunnel.Socket, NetworkPath.Classify(tunnel.Socket));
+        }
+        var socket = await TcpConnector.ConnectAsync(profile.Host, profile.Port, TimeSpan.FromSeconds(10), ct);
+        return (new NetworkStream(socket, ownsSocket: true), socket, NetworkPath.Classify(socket));
+    }
+
+    private async Task<RfbSession> StartSessionAsync(
+        MacProfile profile, string password, double pcPixelsPerDip, ITrustPrompts prompts, IProgress<ConnectStage> progress,
+        Stream stream, Socket socket, AuthPolicy auth, CancellationToken ct)
+    {
         progress.Report(ConnectStage.VerifyingIdentity);
         var options = new RfbSessionOptions
         {
@@ -119,19 +135,34 @@ internal sealed class ConnectionService(AppData data)
                 _ => ConnectStage.Ready,
             }),
         };
-
-        RfbSession session;
         try
         {
-            session = await RfbSession.ConnectAsync(stream, options, ct);
+            return await RfbSession.ConnectAsync(stream, options, ct);
         }
         catch
         {
             await stream.DisposeAsync();
-            if (tunnel is not null) await tunnel.DisposeAsync();
             throw;
         }
-        return new ConnectedMac(session, tunnel, socket, summarize(session.Info.SignIn));
+    }
+
+    private static SecuritySummary Summarize(SignInMethod method, NetworkPath path, SshTunnel? tunnel)
+    {
+        if (tunnel is not null)
+        {
+            return new SecuritySummary(SecurityLevel.Verified, "Encrypted · SSH tunnel",
+                $"Inside an SSH tunnel to the Mac ({tunnel.HostKey.FriendlyAlgorithm} host key, pinned), with Apple's AES encryption inside it.");
+        }
+        return (method, path.Kind) switch
+        {
+            (SignInMethod.AppleRsa, _) => new SecuritySummary(SecurityLevel.Verified, "Encrypted · identity verified",
+                "Signed in with the Mac's pinned RSA identity key; the whole session is encrypted with AES-128."),
+            (_, NetworkPathKind.WireGuardVpn) => new SecuritySummary(SecurityLevel.Protected, $"Encrypted · {path.Description}",
+                $"Inside {path.Description}, with Apple's AES encryption inside that."),
+            (_, NetworkPathKind.Loopback) => new SecuritySummary(SecurityLevel.Protected, "Encrypted · this PC", "A connection to this PC."),
+            _ => new SecuritySummary(SecurityLevel.Unverified, "Encrypted · identity not verified",
+                "Apple's older sign-in protects against eavesdropping but can't prove this is your Mac. Use an SSH tunnel or a VPN for full protection."),
+        };
     }
 
     /// <summary>zlib (Apple's own choice for Full quality) on fast local links, ZRLE when bandwidth matters.</summary>

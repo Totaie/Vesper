@@ -22,6 +22,7 @@ if (options is null)
           --rfb38             speak plain RFB 3.8 instead of Apple's 003.889
           --new-identity      generate a new RSA identity key (tests Vesper's key-change warning)
           --ssh-port <n>      also run a fake Remote Login (SSH) on this port, for testing tunnels
+          --reject-rsa        refuse every RSA (type 33) login, to test Vesper's fallback
           --verbose           log every protocol event
         """);
     return 1;
@@ -31,7 +32,7 @@ using var identity = LoadIdentity(options.NewIdentity);
 using var desktop = new Desktop(options.Width, options.Height, options.Density, options.Animate);
 var serverOptions = new FakeMacOptions(options.User, options.Password, identity,
     OfferRsa: options.Auth is "33" or "both", OfferDiffieHellman: options.Auth is "30" or "both",
-    options.Rfb38, options.Verbose);
+    options.Rfb38, options.Verbose, options.RejectRsa);
 
 using var cts = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
@@ -97,7 +98,7 @@ static RSA LoadIdentity(bool regenerate)
 }
 
 internal sealed record Args(int Port, string User, string Password, int Width, int Height, double Density,
-    bool Animate, string Auth, bool Rfb38, bool NewIdentity, bool Verbose, int SshPort = 0)
+    bool Animate, string Auth, bool Rfb38, bool NewIdentity, bool Verbose, int SshPort = 0, bool RejectRsa = false)
 {
     public static Args? Parse(string[] argv)
     {
@@ -121,6 +122,7 @@ internal sealed record Args(int Port, string User, string Password, int Width, i
                 case "--new-identity": a = a with { NewIdentity = true }; break;
                 case "--verbose": a = a with { Verbose = true }; break;
                 case "--ssh-port": a = a with { SshPort = int.Parse(Next()) }; break;
+                case "--reject-rsa": a = a with { RejectRsa = true }; break;
                 default: return null;
             }
         }

@@ -27,7 +27,13 @@ function Find-V($Parent, [string] $Name, [int] $TimeoutMs = 8000) {
 
 function Invoke-V($El) { $El.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke() }
 function Toggle-V($El) { $El.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern).Toggle() }
-function Set-VText($El, [string] $Text) { $El.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue($Text) }
+function Set-VText($El, [string] $Text) {
+    $p = $null
+    if ($El.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$p)) { $p.SetValue($Text); return }
+    if ($El.TryGetCurrentPattern([System.Windows.Automation.RangeValuePattern]::Pattern, [ref]$p)) { $p.SetValue([double]$Text); return }
+    throw "Element '$($El.Current.Name)' takes no text"
+}
+function Expand-V($El) { $El.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern).Expand() }
 function Type-V($El, [string] $Text) { $El.SetFocus(); Start-Sleep -Milliseconds 150; [System.Windows.Forms.SendKeys]::SendWait($Text) }
 function Snap([string] $TitleLike, [string] $Name) {
     & "$PSScriptRoot\capture-window.ps1" -TitleLike $TitleLike -OutFile "E:\Folders\Coding\CSharp\Vesper\.screenshots\$Name.png"

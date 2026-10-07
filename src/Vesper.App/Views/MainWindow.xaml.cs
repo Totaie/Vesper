@@ -108,7 +108,7 @@ public sealed partial class MainWindow : Window
     private async Task EditAsync(MacProfile? existing, DiscoveredMac? discovered)
     {
         var dialog = new MacEditorDialog(existing, discovered) { XamlRoot = Content.XamlRoot, RequestedTheme = Root.ActualTheme };
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary && dialog.Result is { } result)
+        if (await dialog.ShowAsync() != ContentDialogResult.None && dialog.Result is { } result)
         {
             if (dialog.Password is { Length: > 0 } password && dialog.RememberPassword)
             {
