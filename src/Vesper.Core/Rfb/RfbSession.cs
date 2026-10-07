@@ -647,9 +647,12 @@ public sealed class RfbSession : IAsyncDisposable
         Layout = layout;
         _appliedScale = layout.ServerScale;
         ResizeFramebuffer(layout.FramebufferWidth, layout.FramebufferHeight);
-        LayoutChanged?.Invoke(layout);
         RequestMatchingScale();
+        LayoutChanged?.Invoke(layout);
     }
+
+    /// <summary>True while a requested server scale hasn't yet been confirmed by a layout.</summary>
+    public bool ScalePending => _apple && Layout is { } l && Math.Abs(l.ServerScale - _requestedScale) > 0.01;
 
     /// <summary>Changes the density the Mac should match (e.g. after the window moved to another monitor).</summary>
     public void MatchPixelsPerPoint(double? pixelsPerPoint)

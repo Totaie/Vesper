@@ -46,6 +46,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
     private CursorShape? _cursorShape;
     private double _rasterScale = 1;
     private bool _promptedThisAttempt;
+    private bool _sizedToMac;
 
     internal static void Open(MacProfile profile, string? password)
     {
@@ -544,6 +545,8 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
     private void OnLayout(AppleDisplayLayout layout)
     {
         UpdateTitle();
+        // The first layout comes at native size; wait for the one with the scale Vesper asked for.
+        if (_connection?.Session.ScalePending != true) SizeToMac(layout.FramebufferWidth, layout.FramebufferHeight);
         DisplaysMenu.Items.Clear();
         bool many = layout.Displays.Count > 1;
         DisplaysMenu.Visibility = many ? Visibility.Visible : Visibility.Collapsed;
@@ -564,6 +567,27 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
             item.Click += (_, _) => _connection?.Session.SelectDisplay(id);
             DisplaysMenu.Items.Add(item);
         }
+    }
+
+    /// <summary>
+    /// Opens the window at the Mac's own shape: one framebuffer pixel per screen pixel when that
+    /// fits (the sharpest text), otherwise as large as fits in 90% of the work area. Only once per
+    /// window, so a size the user chooses is left alone.
+    /// </summary>
+    private void SizeToMac(int fbWidth, int fbHeight)
+    {
+        if (_sizedToMac || _fullScreen || fbWidth <= 0 || fbHeight <= 0) return;
+        if (AppWindow.Presenter is OverlappedPresenter { State: not OverlappedPresenterState.Restored }) return;
+        _sizedToMac = true;
+        var area = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
+        var outer = AppWindow.Size;
+        var inner = AppWindow.ClientSize;
+        int chromeW = outer.Width - inner.Width;
+        int chromeH = outer.Height - inner.Height + (int)Math.Round(TitleRow.Height.Value * _rasterScale);
+        double scale = Math.Min(1.0, Math.Min((area.Width * 0.9 - chromeW) / fbWidth, (area.Height * 0.9 - chromeH) / fbHeight));
+        int w = (int)Math.Round(fbWidth * scale) + chromeW;
+        int h = (int)Math.Round(fbHeight * scale) + chromeH;
+        AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(area.X + (area.Width - w) / 2, area.Y + (area.Height - h) / 2, w, h));
     }
 
     private void ApplyCursor(CursorShape shape)
