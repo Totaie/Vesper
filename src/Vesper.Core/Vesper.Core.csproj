@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Vesper.Core</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Vesper.Core.Tests" />
+    <InternalsVisibleTo Include="Vesper.FakeMac" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.DevTunnels.Ssh" />
+    <PackageReference Include="Microsoft.DevTunnels.Ssh.Tcp" />
+  </ItemGroup>
+</Project>

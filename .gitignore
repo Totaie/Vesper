@@ -1,0 +1,20 @@
+# Build output
+bin/
+obj/
+publish/
+artifacts/
+*.user
+*.suo
+.vs/
+.idea/
+*.binlog
+TestResults/
+
+# Third-party references downloaded while researching the protocol (not ours to redistribute)
+.research/
+
+# FakeMac's generated identity key
+fakemac-identity.pem
+
+# Screenshots taken while developing
+.screenshots/

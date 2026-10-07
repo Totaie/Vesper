@@ -1,0 +1,43 @@
+{
+  "version": 2,
+  "dependencies": {
+    "net10.0-windows7.0": {
+      "System.Drawing.Common": {
+        "type": "Direct",
+        "requested": "[10.0.12, )",
+        "resolved": "10.0.12",
+        "contentHash": "FBUxiucg2gsnyItbpGgyXI5u8FYLcqdLKS1XJkHHTj3RK1c6kpsJr/Y9i4edUNF7LqCYFrHqpHEvpt8/lNBe9w==",
+        "dependencies": {
+          "Microsoft.Win32.SystemEvents": "10.0.12"
+        }
+      },
+      "Microsoft.Win32.SystemEvents": {
+        "type": "Transitive",
+        "resolved": "10.0.12",
+        "contentHash": "kdj5cqOwgZCMltEhQ4+WVUoFkMHG08EJfy1MDyS9H+FBg66vTTFyX8YcNl8IQh5wRQv79P+iduQgDGY8ucBR+w=="
+      },
+      "vesper.core": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.DevTunnels.Ssh": "[3.12.42, )",
+          "Microsoft.DevTunnels.Ssh.Tcp": "[3.12.42, )"
+        }
+      },
+      "Microsoft.DevTunnels.Ssh": {
+        "type": "CentralTransitive",
+        "requested": "[3.12.42, )",
+        "resolved": "3.12.42",
+        "contentHash": "ronW7CALKMWoJVgCiE5tF+u6zVE1SWQFZUblO02r3iIu3//97wtSy+HWRuJWMLuS7iJ1TlqDE0lmYYW+VkpOHw=="
+      },
+      "Microsoft.DevTunnels.Ssh.Tcp": {
+        "type": "CentralTransitive",
+        "requested": "[3.12.42, )",
+        "resolved": "3.12.42",
+        "contentHash": "CGYj/CIV+79ssbWEJRFVruyBIBOYpwRczej1Ag2PuIgNpWhxFIgjzO9e1oG0aeQfSSt+Y4AkQy+SbEcyt/kAvg==",
+        "dependencies": {
+          "Microsoft.DevTunnels.Ssh": "3.12.42"
+        }
+      }
+    }
+  }
+}
