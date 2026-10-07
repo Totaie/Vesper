@@ -193,6 +193,75 @@ public sealed class SessionTests : IAsyncLifetime
         await WaitForAsync(() => FramebufferMatchesDesktop(session));
     }
 
+    private sealed class HostKeyCheck(Func<SshHostKey, bool> decide) : IHostKeyVerifier
+    {
+        public SshHostKey? Seen { get; private set; }
+
+        public ValueTask<bool> VerifyAsync(SshHostKey key, CancellationToken ct)
+        {
+            Seen = key;
+            return ValueTask.FromResult(decide(key));
+        }
+    }
+
+    private static int FreePort()
+    {
+        var l = new TcpListener(IPAddress.Loopback, 0);
+        l.Start();
+        int port = ((IPEndPoint)l.LocalEndpoint).Port;
+        l.Stop();
+        return port;
+    }
+
+    [Fact]
+    public async Task Ssh_tunnel_carries_an_encrypted_session_without_a_local_listener()
+    {
+        int rfbPort = StartServer();
+        int sshPort = FreePort();
+        using var front = new SshFront(_desktop, _serverOptions, rfbPort);
+        _ = front.StartAsync(sshPort, _cts.Token);
+        await Task.Delay(200);
+
+        var check = new HostKeyCheck(_ => true);
+        await using var tunnel = await SshTunnel.OpenAsync("127.0.0.1", sshPort, "vesper", "evening-star", check, _cts.Token);
+        Assert.Equal(front.HostKeyFingerprint, check.Seen!.Fingerprint);
+        Assert.Equal("ecdsa-sha2-nistp256", tunnel.HostKey.Algorithm);
+
+        var stream = await tunnel.OpenStreamAsync(rfbPort, _cts.Token);
+        await using var session = await RfbSession.ConnectAsync(stream, new RfbSessionOptions
+        {
+            Username = "vesper", Password = "evening-star", IdentityVerifier = new Pin(_ => true), Auth = AuthPolicy.Any,
+        }, _cts.Token);
+        Assert.True(session.Info.Encrypted);
+        _ = session.RunAsync(_cts.Token);
+        await WaitForAsync(() => FramebufferMatchesDesktop(session));
+    }
+
+    [Fact]
+    public async Task Ssh_tunnel_refuses_an_untrusted_host_key_before_sending_the_password()
+    {
+        int rfbPort = StartServer();
+        int sshPort = FreePort();
+        using var front = new SshFront(_desktop, _serverOptions, rfbPort);
+        _ = front.StartAsync(sshPort, _cts.Token);
+        await Task.Delay(200);
+        await Assert.ThrowsAsync<IdentityRejectedException>(() =>
+            SshTunnel.OpenAsync("127.0.0.1", sshPort, "vesper", "evening-star", new HostKeyCheck(_ => false), _cts.Token));
+    }
+
+    [Fact]
+    public async Task Ssh_tunnel_reports_a_wrong_password()
+    {
+        int rfbPort = StartServer();
+        int sshPort = FreePort();
+        using var front = new SshFront(_desktop, _serverOptions, rfbPort);
+        _ = front.StartAsync(sshPort, _cts.Token);
+        await Task.Delay(200);
+        var e = await Assert.ThrowsAsync<AuthenticationFailedException>(() =>
+            SshTunnel.OpenAsync("127.0.0.1", sshPort, "vesper", "wrong", new HostKeyCheck(_ => true), _cts.Token));
+        Assert.True(e.CredentialsRejected);
+    }
+
     private string ArdRsaFingerprint() => Vesper.Core.Security.ArdRsa.Fingerprint(_identity.ExportRSAPublicKey());
 
     public async ValueTask DisposeAsync()

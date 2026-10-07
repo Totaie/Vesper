@@ -55,11 +55,24 @@ public sealed class RfbSessionOptions
     /// <summary>Server-side scale in (0, 1], or null for the Mac's native pixels.</summary>
     public double? ServerScale { get; init; }
 
+    /// <summary>
+    /// When set, the Mac scales its screen so one of its points becomes this many framebuffer
+    /// pixels (pass this PC's pixels per DIP): a 5K Retina screen viewed from a 100% display
+    /// arrives as 2560×1440, a quarter of the pixels. Decided once the Mac reports its displays.
+    /// Takes precedence over <see cref="ServerScale"/>.
+    /// </summary>
+    public double? MatchPixelsPerPoint { get; init; }
+
     /// <summary>Shortest gap between screen updates the Mac pushes unasked. 16,667 µs is 60 per second.</summary>
     public uint PushIntervalMicroseconds { get; init; } = 16_667;
 
     public TimeSpan HandshakeTimeout { get; init; } = TimeSpan.FromSeconds(20);
+
+    /// <summary>Reports progress through the handshake, for the connecting screen.</summary>
+    public Action<SessionStage>? StageChanged { get; init; }
 }
+
+public enum SessionStage { SigningIn, Encrypting, Ready }
 
 public enum SignInMethod { AppleRsa, AppleDiffieHellman }
 

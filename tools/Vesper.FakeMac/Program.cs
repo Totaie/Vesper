@@ -21,6 +21,7 @@ if (options is null)
           --auth <30|33|both> sign-in methods to offer (default both)
           --rfb38             speak plain RFB 3.8 instead of Apple's 003.889
           --new-identity      generate a new RSA identity key (tests Vesper's key-change warning)
+          --ssh-port <n>      also run a fake Remote Login (SSH) on this port, for testing tunnels
           --verbose           log every protocol event
         """);
     return 1;
@@ -40,6 +41,13 @@ listener.Start();
 Console.WriteLine($"FakeMac listening on 127.0.0.1:{options.Port} as \"{options.User}\" — {desktop.NativeWidth}×{desktop.NativeHeight} " +
                   $"({options.Width}×{options.Height} pt @{options.Density}x), {(options.Rfb38 ? "RFB 3.8" : "Apple 003.889")}, auth {options.Auth}");
 Console.WriteLine($"Identity key fingerprint: SHA256:{Convert.ToBase64String(SHA256.HashData(identity.ExportRSAPublicKey())).TrimEnd('=')}");
+
+if (options.SshPort > 0)
+{
+    var ssh = new SshFront(desktop, serverOptions, options.Port);
+    _ = ssh.StartAsync(options.SshPort, cts.Token);
+    Console.WriteLine($"Fake Remote Login (SSH) on 127.0.0.1:{options.SshPort}, host key {ssh.HostKeyFingerprint}");
+}
 
 _ = Task.Run(async () =>
 {
@@ -89,7 +97,7 @@ static RSA LoadIdentity(bool regenerate)
 }
 
 internal sealed record Args(int Port, string User, string Password, int Width, int Height, double Density,
-    bool Animate, string Auth, bool Rfb38, bool NewIdentity, bool Verbose)
+    bool Animate, string Auth, bool Rfb38, bool NewIdentity, bool Verbose, int SshPort = 0)
 {
     public static Args? Parse(string[] argv)
     {
@@ -112,6 +120,7 @@ internal sealed record Args(int Port, string User, string Password, int Width, i
                 case "--rfb38": a = a with { Rfb38 = true }; break;
                 case "--new-identity": a = a with { NewIdentity = true }; break;
                 case "--verbose": a = a with { Verbose = true }; break;
+                case "--ssh-port": a = a with { SshPort = int.Parse(Next()) }; break;
                 default: return null;
             }
         }

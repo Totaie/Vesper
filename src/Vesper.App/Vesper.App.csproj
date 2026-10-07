@@ -13,8 +13,21 @@
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <SelfContained>true</SelfContained>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\Vesper.ico</ApplicationIcon>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Description>Vesper — a fast, secure Apple Remote Desktop client for Windows.</Description>
+    <!-- No telemetry or diagnostics leave the machine: .NET's own event pipe and startup hooks are off. -->
+    <EventSourceSupport>false</EventSourceSupport>
+    <StartupHookSupport>false</StartupHookSupport>
+    <UseSystemResourceKeys>false</UseSystemResourceKeys>
+    <PublishReadyToRun>true</PublishReadyToRun>
   </PropertyGroup>
+  <ItemGroup>
+    <Content Include="Assets\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Vesper.Core\Vesper.Core.csproj" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" />
     <PackageReference Include="Microsoft.Graphics.Win2D" />

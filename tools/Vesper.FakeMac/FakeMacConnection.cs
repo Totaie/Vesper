@@ -371,7 +371,7 @@ public sealed class FakeMacConnection : IAsyncDisposable
                     byte[] auto = await ReadExactAsync(15, ct);
                     uint interval = BinaryPrimitives.ReadUInt32BigEndian(auto.AsSpan(3));
                     _pushInterval = interval == uint.MaxValue ? null : interval;
-                    Log($"AutoFrameBufferUpdate every {interval} µs");
+                    Log($"AutoFrameBufferUpdate every {interval} us");
                     Wake();
                     break;
                 case 0x0a: await ReadExactAsync(3, ct); break; // SetMode

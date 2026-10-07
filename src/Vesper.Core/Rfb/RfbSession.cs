@@ -42,6 +42,11 @@ public sealed class RfbSession : IAsyncDisposable
     private int _pointerX, _pointerY;
     private double _scrollResidualX, _scrollResidualY;
     private uint _pasteboardRequest;
+    private Deadline? _deadline;
+    private double? _matchPixelsPerPoint;
+    private ColorQuality _color;
+    private volatile bool _clipboardFromMac;
+    private double _requestedScale = 1.0;
     private bool _armed;
     private uint _armedInterval;
     private double _updateCost;
@@ -59,6 +64,9 @@ public sealed class RfbSession : IAsyncDisposable
         _transport = transport;
         _options = options;
         _reader = new RfbReader(transport);
+        _matchPixelsPerPoint = options.MatchPixelsPerPoint;
+        _color = options.Color;
+        _clipboardFromMac = options.ClipboardFromMac;
         Framebuffer = new Framebuffer(1, 1);
         Info = new SessionInfo("", false, SignInMethod.AppleRsa, false, null, false);
     }
@@ -84,7 +92,8 @@ public sealed class RfbSession : IAsyncDisposable
     {
         var session = new RfbSession(transport, options);
         using var handshake = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        handshake.CancelAfter(options.HandshakeTimeout);
+        using var deadline = new Deadline(handshake, options.HandshakeTimeout);
+        session._deadline = deadline;
         try
         {
             await session.HandshakeAsync(handshake.Token).ConfigureAwait(false);
@@ -121,6 +130,7 @@ public sealed class RfbSession : IAsyncDisposable
             throw new ProtocolException("The Mac refused the connection: " + await ReadReasonAsync(ct).ConfigureAwait(false));
         }
         byte[] offered = await _reader.ReadBytesAsync(count, ct).ConfigureAwait(false);
+        _options.StageChanged?.Invoke(SessionStage.SigningIn);
 
         byte[] wrapKey;
         MacIdentity? identity = null;
@@ -159,6 +169,7 @@ public sealed class RfbSession : IAsyncDisposable
                     credentialsRejected: true);
             }
 
+            _options.StageChanged?.Invoke(SessionStage.Encrypting);
             await WriteRawAsync([(byte)(_apple ? 0x81 : 0x01)], ct).ConfigureAwait(false);
             var (name, flags) = await ReadServerInitAsync(ct).ConfigureAwait(false);
             bool observeOnly = (flags & 0x01) != 0;
@@ -172,6 +183,7 @@ public sealed class RfbSession : IAsyncDisposable
                 _out = new OutgoingQueue(_transport, null);
             }
             Info = new SessionInfo(name, _apple, method, Encrypted: _apple, identity, observeOnly || _options.ViewOnly);
+            _options.StageChanged?.Invoke(SessionStage.Ready);
         }
         finally
         {
@@ -197,8 +209,19 @@ public sealed class RfbSession : IAsyncDisposable
         using var rsa = ArdRsa.ImportPublicKey(der);
         var identity = new MacIdentity(ArdRsa.Fingerprint(der), der, rsa.KeySize);
 
-        // Nothing secret has been sent yet; the user (or the pin) decides before anything is.
-        if (_options.IdentityVerifier is null || !await _options.IdentityVerifier.VerifyAsync(identity, ct).ConfigureAwait(false))
+        // Nothing secret has been sent yet; the user (or the pin) decides before anything is. The
+        // handshake clock stops while a person is reading the prompt.
+        bool trusted;
+        _deadline?.Pause();
+        try
+        {
+            trusted = _options.IdentityVerifier is not null && await _options.IdentityVerifier.VerifyAsync(identity, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            _deadline?.Resume();
+        }
+        if (!trusted)
         {
             throw new IdentityRejectedException("The Mac's identity wasn't trusted, so no password was sent.");
         }
@@ -291,15 +314,13 @@ public sealed class RfbSession : IAsyncDisposable
     private async Task StartAppleEncryptionAsync(byte[] wrapKey, bool observeOnly, CancellationToken ct)
     {
         // Written back to back in cleartext: once the Mac starts encrypting, anything else sent
-        // in clear would break the session. AutoPasteboard is only started if Vesper is allowed
-        // to receive the Mac's clipboard at all.
+        // in clear would break the session. Pasteboard monitoring only works when started here,
+        // so it always is; but the Mac only ever says "my clipboard changed", and Vesper fetches
+        // the contents only while clipboard sharing is on.
         using var prelude = new MemoryStream();
         prelude.Write(AppleMessages.ViewerInfoMessage());
         prelude.Write(AppleMessages.SetModeMessage(control: !observeOnly && !_options.ViewOnly));
-        if (_options.ClipboardFromMac)
-        {
-            prelude.Write(AppleMessages.AutoPasteboardMessage(start: true));
-        }
+        prelude.Write(AppleMessages.AutoPasteboardMessage(start: true));
         prelude.Write(AppleMessages.SetEncryptionStart());
         prelude.Write(AppleMessages.SetEncryptionInbound());
         await WriteRawAsync(prelude.ToArray(), ct).ConfigureAwait(false);
@@ -368,8 +389,9 @@ public sealed class RfbSession : IAsyncDisposable
 
         output.Enqueue(SetPixelFormatMessage(PixelFormat.Bgrx32));
         output.Enqueue(SetEncodingsMessage(EncodingList()));
-        if (_apple && _options.ServerScale is double scale && scale > 0 && scale < 1)
+        if (_apple && _matchPixelsPerPoint is null && _options.ServerScale is double scale && scale > 0 && scale < 1)
         {
+            _requestedScale = scale;
             output.Enqueue(AppleMessages.SetServerScalingMessage(scale));
         }
         RequestUpdate(incremental: false);
@@ -402,8 +424,8 @@ public sealed class RfbSession : IAsyncDisposable
         if (_apple)
         {
             // The Mac encodes with the first of zlib, ZRLE and its own codecs in this list.
-            if (_options.Color == ColorQuality.Thousands) list.Add(AppleMessages.EncodingRgb555Zlib);
-            if (_options.Color == ColorQuality.Grayscale) list.Add(AppleMessages.EncodingGrayZlib);
+            if (_color == ColorQuality.Thousands) list.Add(AppleMessages.EncodingRgb555Zlib);
+            if (_color == ColorQuality.Grayscale) list.Add(AppleMessages.EncodingGrayZlib);
             // The rest follows Apple's own viewer (Full quality), plus Raw, the rekey and LastRect,
             // which encrypted sessions see. Every entry is decoded or stepped over: the Mac treats
             // the list as a promise.
@@ -620,6 +642,38 @@ public sealed class RfbSession : IAsyncDisposable
         _appliedScale = layout.ServerScale;
         ResizeFramebuffer(layout.FramebufferWidth, layout.FramebufferHeight);
         LayoutChanged?.Invoke(layout);
+        RequestMatchingScale();
+    }
+
+    /// <summary>Changes the density the Mac should match (e.g. after the window moved to another monitor).</summary>
+    public void MatchPixelsPerPoint(double? pixelsPerPoint)
+    {
+        _matchPixelsPerPoint = pixelsPerPoint;
+        if (pixelsPerPoint is null && _apple && _requestedScale != 1.0)
+        {
+            _requestedScale = 1.0;
+            _out?.Enqueue(AppleMessages.SetServerScalingMessage(1.0));
+            return;
+        }
+        RequestMatchingScale();
+    }
+
+    private void RequestMatchingScale()
+    {
+        if (!_apple || _out is null || Layout is not { } layout || _matchPixelsPerPoint is not double target) return;
+        // A combined view of screens at different densities can't be scaled as one; Apple's viewer
+        // takes it at native size too.
+        bool mixed = layout.CurrentDisplay is null && layout.Displays.Select(d => d.Density).Distinct().Count() > 1;
+        double wanted = mixed ? 1.0 : Math.Clamp(target / layout.NativeDensity, 0.1, 1.0);
+        wanted = Math.Round(wanted, 3);
+        if (Math.Abs(wanted - layout.ServerScale) < 0.01)
+        {
+            _requestedScale = layout.ServerScale; // already there
+            return;
+        }
+        if (Math.Abs(wanted - _requestedScale) < 0.001) return; // asked already; never loop on what the Mac granted
+        _requestedScale = wanted;
+        _out.Enqueue(AppleMessages.SetServerScalingMessage(wanted));
     }
 
     /// <summary>
@@ -678,7 +732,7 @@ public sealed class RfbSession : IAsyncDisposable
         _reader.Skip(3);
         int length = _reader.S32();
         long size = Math.Abs((long)length);
-        if (length < 0 || size > MaxCutText || !_options.ClipboardFromMac)
+        if (length < 0 || size > MaxCutText || !_clipboardFromMac)
         {
             await _reader.SkipAsync(size, ct).ConfigureAwait(false);
             return;
@@ -697,7 +751,7 @@ public sealed class RfbSession : IAsyncDisposable
         ushort command = BinaryPrimitives.ReadUInt16BigEndian(body.AsSpan(2));
         switch (command)
         {
-            case AppleMessages.StatusPasteboardChanged when _options.ClipboardFromMac:
+            case AppleMessages.StatusPasteboardChanged when _clipboardFromMac:
                 _out?.Enqueue(AppleMessages.PasteboardFetchMessage(++_pasteboardRequest));
                 break;
             case AppleMessages.StatusSessionEnded:
@@ -718,7 +772,7 @@ public sealed class RfbSession : IAsyncDisposable
         var header = _reader.Take(15);
         uint uncompressed = BinaryPrimitives.ReadUInt32BigEndian(header[7..]);
         uint compressed = BinaryPrimitives.ReadUInt32BigEndian(header[11..]);
-        if (!_options.ClipboardFromMac || compressed > ApplePasteboard.MaxArchiveBytes || uncompressed > ApplePasteboard.MaxArchiveBytes)
+        if (!_clipboardFromMac || compressed > ApplePasteboard.MaxArchiveBytes || uncompressed > ApplePasteboard.MaxArchiveBytes)
         {
             await _reader.SkipAsync(compressed, ct).ConfigureAwait(false);
             return;
@@ -800,6 +854,12 @@ public sealed class RfbSession : IAsyncDisposable
         _out!.Enqueue(m);
     }
 
+    /// <summary>
+    /// Turns receiving the Mac's clipboard on or off mid-session. Only later changes on the Mac come
+    /// across; turning it on doesn't pull the Mac's old clipboard over the one on Windows.
+    /// </summary>
+    public void SetClipboardFromMac(bool enabled) => _clipboardFromMac = enabled;
+
     /// <summary>Puts text on the Mac's clipboard.</summary>
     public void SendClipboard(string text)
     {
@@ -823,6 +883,17 @@ public sealed class RfbSession : IAsyncDisposable
         if (!_apple || _out is null) return;
         _out.Enqueue(AppleMessages.SetServerScalingMessage(Math.Clamp(factor, 0.1, 1.0)));
     }
+
+    /// <summary>Switches colour depth mid-session; the Mac repaints in the new encoding.</summary>
+    public void SetColorQuality(ColorQuality color)
+    {
+        if (!_apple || _out is null || color == _color) return;
+        _color = color;
+        _out.Enqueue(SetEncodingsMessage(EncodingList()));
+        RequestUpdate(incremental: false);
+    }
+
+    public ColorQuality Color => _color;
 
     /// <summary>Shows one of the Mac's displays, or all of them (null).</summary>
     public void SelectDisplay(uint? displayId)
@@ -904,4 +975,36 @@ public sealed class RfbSession : IAsyncDisposable
         _decode.Dispose();
         _lifetime.Dispose();
     }
+}
+
+/// <summary>A timeout that can be paused while the user reads a trust prompt.</summary>
+internal sealed class Deadline : IDisposable
+{
+    private readonly CancellationTokenSource _cts;
+    private readonly Timer _timer;
+    private TimeSpan _remaining;
+    private long _startedTicks;
+
+    public Deadline(CancellationTokenSource cts, TimeSpan timeout)
+    {
+        _cts = cts;
+        _remaining = timeout;
+        _timer = new Timer(_ => { try { _cts.Cancel(); } catch (ObjectDisposedException) { } });
+        Resume();
+    }
+
+    public void Pause()
+    {
+        _timer.Change(Timeout.Infinite, Timeout.Infinite);
+        _remaining -= Stopwatch.GetElapsedTime(_startedTicks);
+        if (_remaining < TimeSpan.FromSeconds(5)) _remaining = TimeSpan.FromSeconds(5);
+    }
+
+    public void Resume()
+    {
+        _startedTicks = Stopwatch.GetTimestamp();
+        _timer.Change(_remaining, Timeout.InfiniteTimeSpan);
+    }
+
+    public void Dispose() => _timer.Dispose();
 }
