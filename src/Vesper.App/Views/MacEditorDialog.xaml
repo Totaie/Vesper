@@ -91,7 +91,7 @@
                         <ToggleSwitch x:Name="LegacySwitch" Header="Allow Apple's older sign-in on unprotected networks"
                                       OffContent="Off (recommended)" OnContent="On" />
                         <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                   Text="Only for Macs that don't offer RSA sign-in. That method is still encrypted, but someone on the same network could impersonate the Mac to capture your password. Through an SSH tunnel or a VPN like Tailscale it's always allowed, because those prove who's on the other end." />
+                                   Text="Only for Macs that don't offer RSA sign-in. With a Mac the session is still encrypted, but someone on the same network could impersonate it to capture your password; a server that isn't a Mac isn't encrypted at all. Through an SSH tunnel or a VPN like Tailscale it's always allowed, because those prove who's on the other end." />
                     </StackPanel>
                 </StackPanel>
             </Expander>

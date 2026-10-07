@@ -10,7 +10,7 @@ limits are.
 ### Someone on the network
 
 **Passive eavesdropping** (shared Wi-Fi, a compromised router, an ISP).
-Every session uses Apple's record layer: after sign-in, both directions are AES-128-CBC with a
+Every session with a Mac uses Apple's record layer: after sign-in, both directions are AES-128-CBC with a
 per-record SHA-1 integrity trailer and a sequence number that never resets, so records can't
 be read, altered, reordered or replayed unnoticed. Vesper turns it on for every session; Apple's
 own viewer leaves it off by default. Inside an SSH tunnel the session is additionally wrapped in
@@ -31,7 +31,9 @@ The answer is authenticating the Mac before anything secret is sent:
   WireGuard, detected from the adapter the socket is actually bound to, not from the address),
   on loopback, or for a Mac the user explicitly allows ("Allow Apple's older sign-in on
   unprotected networks", off by default). The session's security indicator turns amber when
-  that last case is in use.
+  that last case is in use. A server that isn't a Mac (plain RFB 3.8) has no Apple encryption at
+  all. It's only reachable through the same opt-in, and the indicator then reads "Not encrypted"
+  in red.
 - *Downgrade attempts*: an attacker who makes RSA sign-in fail can't push Vesper to
   Diffie-Hellman on an unprotected network. The single retry with Diffie-Hellman after a refused
   RSA login happens only where Diffie-Hellman is already allowed (see above).

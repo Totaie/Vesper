@@ -507,7 +507,8 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         {
             SecurityLevel.Verified => ("", "VesperVerifiedBrush"),
             SecurityLevel.Protected => ("", "VesperProtectedBrush"),
-            _ => ("", "VesperWarningBrush"),
+            SecurityLevel.Unverified => ("", "VesperWarningBrush"),
+            _ => ("", "VesperDangerBrush"),
         };
         var brush = (Brush)Application.Current.Resources[brushKey];
         SecurityIcon.Glyph = glyph;
@@ -523,6 +524,10 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         if (security.Level == SecurityLevel.Unverified)
         {
             ShowNotice("This connection is encrypted, but the Mac's identity can't be verified on this network. Consider an SSH tunnel or a VPN.", InfoBarSeverity.Warning);
+        }
+        else if (security.Level == SecurityLevel.Unencrypted)
+        {
+            ShowNotice(security.Detail, InfoBarSeverity.Error);
         }
     }
 

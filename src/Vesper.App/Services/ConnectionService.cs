@@ -17,6 +17,9 @@ public enum SecurityLevel
 
     /// <summary>Encrypted, but an active attacker on this network could impersonate the Mac.</summary>
     Unverified,
+
+    /// <summary>Nothing protects this connection (a non-Apple VNC server on an open network).</summary>
+    Unencrypted,
 }
 
 public sealed record SecuritySummary(SecurityLevel Level, string Headline, string Detail);
@@ -93,7 +96,7 @@ internal sealed class ConnectionService(AppData data)
                 Persist(profile, data, p => p.RsaSignInUnsupported = true);
                 profile.RsaSignInUnsupported = true;
             }
-            return new ConnectedMac(session, tunnel, socket, Summarize(session.Info.SignIn, path, tunnel));
+            return new ConnectedMac(session, tunnel, socket, Summarize(session.Info, path, tunnel));
         }
         catch
         {
@@ -146,23 +149,34 @@ internal sealed class ConnectionService(AppData data)
         }
     }
 
-    private static SecuritySummary Summarize(SignInMethod method, NetworkPath path, SshTunnel? tunnel)
+    private static SecuritySummary Summarize(SessionInfo info, NetworkPath path, SshTunnel? tunnel)
     {
         if (tunnel is not null)
         {
             return new SecuritySummary(SecurityLevel.Verified, "Encrypted · SSH tunnel",
-                $"Inside an SSH tunnel to the Mac ({tunnel.HostKey.FriendlyAlgorithm} host key, pinned), with Apple's AES encryption inside it.");
+                $"Inside an SSH tunnel to the Mac ({tunnel.HostKey.FriendlyAlgorithm} host key, pinned)" +
+                (info.Encrypted ? ", with Apple's AES encryption inside it." : "."));
         }
-        return (method, path.Kind) switch
+        if (path.Kind == NetworkPathKind.WireGuardVpn)
         {
-            (SignInMethod.AppleRsa, _) => new SecuritySummary(SecurityLevel.Verified, "Encrypted · identity verified",
-                "Signed in with the Mac's pinned RSA identity key; the whole session is encrypted with AES-128."),
-            (_, NetworkPathKind.WireGuardVpn) => new SecuritySummary(SecurityLevel.Protected, $"Encrypted · {path.Description}",
-                $"Inside {path.Description}, with Apple's AES encryption inside that."),
-            (_, NetworkPathKind.Loopback) => new SecuritySummary(SecurityLevel.Protected, "Encrypted · this PC", "A connection to this PC."),
-            _ => new SecuritySummary(SecurityLevel.Unverified, "Encrypted · identity not verified",
-                "Apple's older sign-in protects against eavesdropping but can't prove this is your Mac. Use an SSH tunnel or a VPN for full protection."),
-        };
+            return new SecuritySummary(SecurityLevel.Protected, $"Encrypted · {path.Description}",
+                $"Inside {path.Description}" + (info.Encrypted ? ", with Apple's AES encryption inside that." : "."));
+        }
+        if (path.Kind == NetworkPathKind.Loopback)
+        {
+            return new SecuritySummary(SecurityLevel.Protected, "This PC", "A connection to this PC; nothing crosses a network.");
+        }
+        if (!info.Encrypted)
+        {
+            // Only a non-Apple VNC server gets here, and only with "Allow older sign-in" on.
+            return new SecuritySummary(SecurityLevel.Unencrypted, "Not encrypted",
+                "This server isn't a Mac and doesn't speak Apple's encrypted protocol. Anyone on the network can see the screen and what you type. Use an SSH tunnel or a VPN.");
+        }
+        return info.SignIn == SignInMethod.AppleRsa
+            ? new SecuritySummary(SecurityLevel.Verified, "Encrypted · identity verified",
+                "Signed in with the Mac's pinned RSA identity key; the whole session is encrypted with AES-128.")
+            : new SecuritySummary(SecurityLevel.Unverified, "Encrypted · identity not verified",
+                "Apple's older sign-in protects against eavesdropping but can't prove this is your Mac. Use an SSH tunnel or a VPN for full protection.");
     }
 
     /// <summary>zlib (Apple's own choice for Full quality) on fast local links, ZRLE when bandwidth matters.</summary>
