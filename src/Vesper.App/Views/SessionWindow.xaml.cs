@@ -45,6 +45,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
     private bool _captureShortcutsForSession;
     private CursorShape? _cursorShape;
     private double _rasterScale = 1;
+    private bool _promptedThisAttempt;
 
     internal static void Open(MacProfile profile, string? password)
     {
@@ -135,6 +136,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         }
 
         _cts = new CancellationTokenSource();
+        _promptedThisAttempt = false;
         var progress = new Progress<ConnectStage>(SetStage);
         try
         {
@@ -154,6 +156,15 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         }
         catch (OperationCanceledException) when (_closing)
         {
+            return;
+        }
+        catch (Exception e) when (_promptedThisAttempt && !_closing && e is ConnectionClosedException or IOException or TimeoutException)
+        {
+            // The Mac gave up on the half-finished sign-in while the trust prompt was being read.
+            // The key is pinned now, so the next attempt goes straight through.
+            Diagnostics.Add($"Connection to {_profile.Host} timed out during a trust prompt; retrying.");
+            _password = password;
+            await ConnectAsync();
             return;
         }
         catch (Exception e)
@@ -378,22 +389,22 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
     }
 
     Task<bool> ITrustPrompts.TrustMacIdentityAsync(MacProfile profile, MacIdentity identity, string? previous) =>
-        OnUiAsync(() => TrustDialogAsync(
+        OnUiAsync(() => { _promptedThisAttempt = true; return TrustDialogAsync(
             previous is null ? $"First connection to {MacCardItem.DisplayName(profile)}" : "This Mac's identity has changed",
             previous is null
                 ? "Vesper hasn't met this Mac before. It will remember the Mac's identity key and warn you if it ever changes, so nobody can quietly pretend to be your Mac later. If you can, check this fingerprint against one you trust."
                 : $"The identity key {profile.Host} presented doesn't match the one you trusted. That happens after reinstalling macOS or resetting Screen Sharing, but it's also exactly what someone intercepting the connection would look like. If you didn't expect it, disconnect.",
             $"RSA {identity.KeySizeBits}-bit key",
-            identity.Fingerprint, previous, verifyCommand: null));
+            identity.Fingerprint, previous, verifyCommand: null); });
 
     Task<bool> ITrustPrompts.TrustSshHostKeyAsync(MacProfile profile, SshHostKey key, string? previous) =>
-        OnUiAsync(() => TrustDialogAsync(
+        OnUiAsync(() => { _promptedThisAttempt = true; return TrustDialogAsync(
             previous is null ? $"First SSH connection to {MacCardItem.DisplayName(profile)}" : "This Mac's SSH host key has changed",
             previous is null
                 ? "Vesper will pin this SSH host key and refuse to send your password if it ever changes. To be certain it's your Mac, compare it with what Terminal on the Mac prints for:"
                 : $"The SSH host key {profile.Host} presented doesn't match the one you trusted. Unless you reinstalled macOS or regenerated its SSH keys, someone may be intercepting the connection. Compare it with what Terminal on the Mac prints for:",
             $"{key.FriendlyAlgorithm} host key",
-            key.Fingerprint, previous, verifyCommand: key.VerifyCommand));
+            key.Fingerprint, previous, verifyCommand: key.VerifyCommand); });
 
     private async Task<bool> TrustDialogAsync(string title, string body, string keyKind, string fingerprint, string? previous, string? verifyCommand)
     {

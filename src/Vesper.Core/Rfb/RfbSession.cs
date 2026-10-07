@@ -499,7 +499,8 @@ public sealed class RfbSession : IAsyncDisposable
                     i = rects;
                     continue;
                 case EncodingDesktopSize:
-                    if (!_apple) ResizeFramebuffer(w, h);
+                    // A Mac normally reports size through its display layout; older ones may not.
+                    ResizeFramebuffer(w, h);
                     continue;
                 case EncodingExtendedDesktopSize when !_apple:
                     await _reader.EnsureAsync(4, ct).ConfigureAwait(false);
@@ -521,6 +522,9 @@ public sealed class RfbSession : IAsyncDisposable
                     fullRepaint = true;
                     continue;
                 case AppleMessages.EncodingDisplayInfo when _apple:
+                    // The older display list: u16 w, u16 h, u32 flags, u16 count, 0x1c per display.
+                    // Whether its size is in points or pixels isn't known, so it's stepped over;
+                    // sizes come from the layout, ServerInit or DesktopSize.
                     await _reader.EnsureAsync(10, ct).ConfigureAwait(false);
                     _reader.Skip(8);
                     await _reader.SkipAsync(_reader.U16() * 0x1cL, ct).ConfigureAwait(false);
