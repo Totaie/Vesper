@@ -56,7 +56,7 @@ public sealed class RfbSession : IAsyncDisposable
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private long _windowStart;
     private int _windowUpdates;
-    private long _windowBytes;
+    private long _windowStartBytes;
     private double _windowDecodeMs;
 
     private RfbSession(Stream transport, RfbSessionOptions options)
@@ -479,7 +479,6 @@ public sealed class RfbSession : IAsyncDisposable
     private async Task ReadFramebufferUpdateAsync(CancellationToken ct)
     {
         long started = _clock.ElapsedTicks;
-        long bytesBefore = _reader.BytesReceived;
         await _reader.EnsureAsync(3, ct).ConfigureAwait(false);
         _reader.Skip(1);
         int rects = _reader.U16();
@@ -560,7 +559,7 @@ public sealed class RfbSession : IAsyncDisposable
         }
 
         if (pixels) Framebuffer.Commit();
-        RecordUpdate(started, bytesBefore, pixels);
+        RecordUpdate(started, pixels);
 
         if (fullRepaint)
         {
@@ -576,7 +575,7 @@ public sealed class RfbSession : IAsyncDisposable
         }
     }
 
-    private void RecordUpdate(long startedTicks, long bytesBefore, bool pixels)
+    private void RecordUpdate(long startedTicks, bool pixels)
     {
         long now = _clock.ElapsedTicks;
         double costMs = (now - startedTicks) * 1000.0 / Stopwatch.Frequency;
@@ -586,18 +585,21 @@ public sealed class RfbSession : IAsyncDisposable
             _windowDecodeMs += costMs;
             PacePushes(costMs);
         }
-        _windowBytes += _reader.BytesReceived - bytesBefore;
         double windowSeconds = (now - _windowStart) / (double)Stopwatch.Frequency;
         if (windowSeconds >= 1.0)
         {
+            // Bytes are counted for the whole window, not per update: the reader pulls data off the
+            // wire ahead of each update (while waiting for the next message type), so per-update
+            // deltas would miss most of it.
+            long total = _reader.BytesReceived;
             Stats.UpdatesPerSecond = _windowUpdates / windowSeconds;
-            Stats.MegabitsPerSecond = _windowBytes * 8 / windowSeconds / 1e6;
+            Stats.MegabitsPerSecond = (total - _windowStartBytes) * 8 / windowSeconds / 1e6;
             Stats.DecodeMilliseconds = _windowUpdates > 0 ? _windowDecodeMs / _windowUpdates : 0;
-            Stats.BytesReceived = _reader.BytesReceived;
+            Stats.BytesReceived = total;
             Stats.BytesSent = _out?.BytesSent ?? 0;
             _windowStart = now;
+            _windowStartBytes = total;
             _windowUpdates = 0;
-            _windowBytes = 0;
             _windowDecodeMs = 0;
         }
     }

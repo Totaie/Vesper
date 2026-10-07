@@ -872,7 +872,12 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
     {
         if (_connection is null) return;
         var stats = _connection.Session.Stats;
-        string rtt = TcpRtt.Milliseconds(_connection.Socket) is double ms ? $" · {ms:0.#} ms" : "";
+        string rtt = TcpRtt.Milliseconds(_connection.Socket) switch
+        {
+            double ms when ms < 1 => " · <1 ms",
+            double ms => $" · {ms:0} ms",
+            _ => "",
+        };
         StatsText.Text = $"{_renderer.FramesPerSecond:0} fps · {stats.UpdatesPerSecond:0} upd/s · {stats.MegabitsPerSecond:0.0} Mb/s{rtt}";
     }
 

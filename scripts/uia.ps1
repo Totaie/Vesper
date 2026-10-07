@@ -25,6 +25,13 @@ function Find-V($Parent, [string] $Name, [int] $TimeoutMs = 8000) {
     throw "Element '$Name' not found"
 }
 
+function Find-VAll($Parent, [string] $Name, [System.Windows.Automation.ControlType] $Type) {
+    $cond = New-Object System.Windows.Automation.AndCondition(
+        (New-Object System.Windows.Automation.PropertyCondition($UIA::NameProperty, $Name)),
+        (New-Object System.Windows.Automation.PropertyCondition($UIA::ControlTypeProperty, $Type)))
+    return $Parent.FindAll($Scope::Descendants, $cond)
+}
+
 function Invoke-V($El) { $El.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke() }
 function Toggle-V($El) { $El.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern).Toggle() }
 function Set-VText($El, [string] $Text) {
