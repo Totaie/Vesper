@@ -12,16 +12,20 @@ reason are noted.
 ## Connecting
 
 1. Server sends `RFB 003.889\n`. Vesper answers `RFB 003.889\n`, which turns on Apple's
-   extensions. A server that isn't a Mac gets the plain RFB 3.8 path.
+   extensions. A server that answers with plain RFB 3.8 has no record layer, so Vesper refuses
+   it unless the session runs inside the SSH tunnel.
 2. Security types: a one-byte count, then the types. macOS lists 30, 33, 36, (31, 32), (2), 35.
-   Vesper picks **33** (RSA). It uses **30** (Diffie-Hellman) only where the transport already
-   authenticates the Mac (see SECURITY.md).
+   Vesper picks **33** (RSA), and only on 003.889: the key a server presents proves nothing
+   until the record layer shows it could unwrap the session keys (step 9). It uses **30**
+   (Diffie-Hellman) only where the path already authenticates the Mac, or where the user
+   allowed it for a Mac that has never proven an identity key (see SECURITY.md).
 3. Sign-in (below), then `SecurityResult`: a `u32`, 0 = success. On 003.889 a refusal is the
    word alone, with no reason string, so Vesper doesn't wait for one.
 4. `ClientInit` = `0x81`: `0x80` asks for the extended ServerInit, `0x01` means shared.
 5. Extended `ServerInit`: width, height, pixel format, then a "name" made of `u16 0`,
    `u32 flags` (bit 0 = observe only), a 16-byte bitmap of accepted client messages (type `t` is
-   bit `7 − t % 8` of byte `t / 8`), and the UTF-8 name.
+   bit `7 − t % 8` of byte `t / 8`), and the UTF-8 name. This, like everything before the
+   rekey, travels in clear and isn't authenticated.
 6. Cleartext prelude, written back to back: `ViewerInfo` (0x21, 66 bytes, numeric form),
    `SetMode(control)` (`0a 00 00 01`), `AutoPasteboard(start)` (`15 00 00 01 00 00 00 00`),
    `SetEncryption` command 1 (`12 00 00 01 00 01 00 01 00 00 00 01`), then command 2
@@ -33,6 +37,10 @@ reason are noted.
 8. Inside the records: `SetPixelFormat` (32bpp little-endian xRGB, which is B,G,R,x in memory),
    `SetEncodings`, a full update request, and `AutoFrameBufferUpdate` once the first display
    layout arrives.
+9. The Mac's first record. Its integrity check can only pass if the Mac recovered the wrap
+   key, which for type 33 means it holds the identity key's private half. Vesper shows the
+   screen, and pins a newly trusted identity key, only from here; a failure ends the session.
+   From then on Vesper accepts only the encodings it asked for.
 
 ## Sign-in
 

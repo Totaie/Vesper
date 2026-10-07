@@ -45,13 +45,15 @@ public sealed class MacProfile
 
     /// <summary>
     /// Allow Apple's older Diffie-Hellman sign-in on a network Vesper can't vouch for. It's still
-    /// encrypted, but a man in the middle could impersonate the Mac. Off unless the user opts in.
+    /// encrypted, but a man in the middle could impersonate the Mac. Off unless the user opts in,
+    /// and ignored once the Mac has proven its identity key.
     /// </summary>
     public bool AllowLegacySignIn { get; set; }
 
     /// <summary>
     /// Set when this Mac refused Apple's RSA sign-in but accepted the same password through the
-    /// older method (only ever tried where that method is safe). Skips straight to it next time.
+    /// older method, learned only over a path that authenticates the Mac (SSH, Tailscale). On such
+    /// paths it skips straight to that method next time. Cleared from the Mac's editor.
     /// </summary>
     public bool RsaSignInUnsupported { get; set; }
 

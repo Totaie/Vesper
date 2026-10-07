@@ -151,6 +151,26 @@ public class DecoderTests
     {
         Assert.Throws<ProtocolException>(() => new Framebuffer(0, 10));
         Assert.Throws<ProtocolException>(() => new Framebuffer(20000, 10));
+        Assert.Throws<ProtocolException>(() => new Framebuffer(16384, 16384));
+    }
+
+    [Fact]
+    public async Task Rre_refuses_to_repaint_its_rectangle_over_and_over()
+    {
+        // 8×8 rectangle, 64 subrectangles (allowed: no more than its pixels), each the whole 8×8.
+        var body = new MemoryStream();
+        var u32 = new byte[4];
+        BinaryPrimitives.WriteUInt32BigEndian(u32, 64); body.Write(u32);
+        body.Write(new byte[4]); // background
+        for (int i = 0; i < 64; i++)
+        {
+            body.Write(new byte[4]);                    // colour
+            body.Write([0, 0, 0, 0, 0, 8, 0, 8]);       // x 0, y 0, w 8, h 8
+        }
+        body.Position = 0;
+        var reader = new RfbReader(body);
+        var fb = new Framebuffer(8, 8);
+        await Assert.ThrowsAsync<ProtocolException>(() => StandardDecoders.RreAsync(reader, fb, new PixelRect(0, 0, 8, 8), default).AsTask());
     }
 
     [Fact]

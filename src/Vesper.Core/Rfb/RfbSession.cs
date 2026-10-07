@@ -14,10 +14,12 @@ public sealed class IdentityRejectedException(string message) : Exception(messag
 /// One connection to a Mac's Screen Sharing server: sign-in, Apple's encrypted record layer,
 /// screen updates into a <see cref="Rfb.Framebuffer"/>, and input back.
 ///
-/// Speaks Apple's RFB 003.889 when the server offers it (every Mac does), which is what makes
-/// it fast: the Mac pushes changes as they happen (AutoFrameBufferUpdate) instead of answering
-/// polls late, renders at a reduced scale on request, and sends the pointer as a separate image.
-/// Falls back to plain RFB 3.8 for other servers.
+/// Speaks Apple's RFB 003.889 (every Mac does), which is what makes it fast: the Mac pushes
+/// changes as they happen (AutoFrameBufferUpdate) instead of answering polls late, renders at a
+/// reduced scale on request, and sends the pointer as a separate image. It's also what makes it
+/// safe: everything after sign-in travels in Apple's encrypted record layer. A server that only
+/// speaks plain RFB 3.8 has no such layer and is refused unless the caller's transport encrypts
+/// (<see cref="RfbSessionOptions.AllowUnencrypted"/>).
 /// </summary>
 public sealed class RfbSession : IAsyncDisposable
 {
@@ -36,6 +38,10 @@ public sealed class RfbSession : IAsyncDisposable
     private readonly AppleCursorCache _cursors = new();
     private readonly CancellationTokenSource _lifetime = new();
     private OutgoingQueue? _out;
+    private RecordReaderStream? _records;
+    private Task? _readTask, _writeTask;
+    private int _disposed;
+    private volatile HashSet<int> _requested = [];
     private byte[] _commands = new byte[16];
     private bool _apple;
     private double _appliedScale = 1.0;
@@ -88,6 +94,13 @@ public sealed class RfbSession : IAsyncDisposable
     public event Action<string>? Notice;
     public event Action<string>? ModelIdentified;
 
+    /// <summary>
+    /// Raised once, on the receive thread, when the Mac's first encrypted record has checked out:
+    /// from then on the session is known to be with whoever holds the sign-in's secret. (Right
+    /// away for a session without Apple's record layer.) Show the Mac's screen from here.
+    /// </summary>
+    public event Action? Secured;
+
     public static async Task<RfbSession> ConnectAsync(Stream transport, RfbSessionOptions options, CancellationToken ct)
     {
         var session = new RfbSession(transport, options);
@@ -109,6 +122,10 @@ public sealed class RfbSession : IAsyncDisposable
             await session.DisposeAsync().ConfigureAwait(false);
             throw;
         }
+        finally
+        {
+            options.ForgetPassword();
+        }
     }
 
     // ───────────────────────────── Handshake ─────────────────────────────
@@ -122,36 +139,51 @@ public sealed class RfbSession : IAsyncDisposable
         {
             throw new ProtocolException($"This server speaks RFB {major}.{minor}; Vesper needs 3.8 or Apple's 3.889.");
         }
+        if (!_apple && !_options.AllowUnencrypted)
+        {
+            // Without Apple's record layer nothing protects the session, and no sign-in proves who
+            // answered: a Mac's public identity key can simply be replayed by whoever is in the way.
+            throw new SecurityRefusedException(RefusalReason.NotApple,
+                $"This server answered as plain VNC (RFB {major}.{minor}) instead of as a Mac's Screen Sharing, so the session couldn't be encrypted, and Vesper didn't send your password. " +
+                "Every Mac speaks Apple's protocol, so this may not be your Mac, or something on the network may be in the way. Other VNC servers work only through the SSH tunnel.");
+        }
         await WriteRawAsync(_apple ? "RFB 003.889\n"u8.ToArray() : "RFB 003.008\n"u8.ToArray(), ct).ConfigureAwait(false);
 
         int count = await _reader.ReadU8Async(ct).ConfigureAwait(false);
         if (count == 0)
         {
-            throw new ProtocolException("The Mac refused the connection: " + await ReadReasonAsync(ct).ConfigureAwait(false));
+            throw new ConnectionRefusedException(await ReadReasonAsync(ct).ConfigureAwait(false));
         }
         byte[] offered = await _reader.ReadBytesAsync(count, ct).ConfigureAwait(false);
         _options.StageChanged?.Invoke(SessionStage.SigningIn);
 
+        // RSA sign-in only proves anything inside Apple's record layer, where the session keys
+        // arrive wrapped under a secret only the identity key's owner could have recovered.
+        bool rsaUsable = _apple && offered.Contains(ArdRsa.SecurityType);
+        bool diffieHellmanOffered = offered.Contains(ArdDiffieHellman.SecurityType);
         byte[] wrapKey;
         MacIdentity? identity = null;
         SignInMethod method;
-        if (_options.Auth.AllowRsa && offered.Contains(ArdRsa.SecurityType))
+        if (_options.Auth.AllowRsa && rsaUsable)
         {
             (wrapKey, identity) = await SignInRsaAsync(ct).ConfigureAwait(false);
             method = SignInMethod.AppleRsa;
         }
-        else if (_options.Auth.AllowDiffieHellman && offered.Contains(ArdDiffieHellman.SecurityType))
+        else if (_options.Auth.AllowDiffieHellman && diffieHellmanOffered)
         {
             wrapKey = await SignInDiffieHellmanAsync(ct).ConfigureAwait(false);
             method = SignInMethod.AppleDiffieHellman;
         }
+        else if (diffieHellmanOffered)
+        {
+            throw new SecurityRefusedException(RefusalReason.OnlyUnverifiableSignIn,
+                "This Mac only offered Apple's older sign-in, which can't prove it's your Mac on this network, so Vesper didn't send your password. " +
+                "Connect through an SSH tunnel or straight to the Mac's Tailscale address, or allow the older sign-in for this Mac in its settings.");
+        }
         else
         {
-            string list = string.Join(", ", offered);
             throw new AuthenticationFailedException(
-                offered.Contains(ArdDiffieHellman.SecurityType)
-                    ? "This Mac only offers the older Diffie-Hellman sign-in, which isn't safe on an unprotected network. Connect through an SSH tunnel or a VPN, or allow it for this Mac in its settings."
-                    : $"This server doesn't offer an Apple sign-in method (it offers {list}). Turn on Screen Sharing or Remote Management on the Mac.",
+                $"This server doesn't offer a sign-in Vesper can use here (it offers {string.Join(", ", offered)}). Turn on Screen Sharing or Remote Management on the Mac.",
                 credentialsRejected: false);
         }
 
@@ -160,13 +192,15 @@ public sealed class RfbSession : IAsyncDisposable
             uint result = await _reader.ReadU32Async(ct).ConfigureAwait(false);
             if (result != 0)
             {
-                // A Mac on 003.889 sends the word alone; a 3.8 server follows it with a reason.
-                string detail = _apple ? "" : await ReadReasonAsync(ct).ConfigureAwait(false);
+                // A 3.8 server follows the word with a reason; it's the server's own unauthenticated
+                // text, and the connection is over anyway, so it isn't read.
                 throw new AuthenticationFailedException(
-                    "The Mac didn't accept that user name and password." +
-                    (detail.Length > 0 ? $" ({detail})" : "") +
-                    " If they're right, make sure this account is allowed: in the Mac's Sharing settings, click ⓘ next to Screen Sharing (or Remote Management, where \"All users\" isn't enough: add the account and allow Observe and Control).",
-                    credentialsRejected: true);
+                    "The Mac didn't accept that user name and password. If they're right, make sure this account is allowed: in the Mac's Sharing settings, click ⓘ next to Screen Sharing (or Remote Management, where \"All users\" isn't enough: add the account and allow Observe and Control).",
+                    credentialsRejected: true)
+                {
+                    Method = method,
+                    DiffieHellmanOffered = diffieHellmanOffered,
+                };
             }
 
             _options.StageChanged?.Invoke(SessionStage.Encrypting);
@@ -272,17 +306,23 @@ public sealed class RfbSession : IAsyncDisposable
 
         byte[] user = ArdDiffieHellman.Utf8Truncated(_options.Username);
         byte[] pass = ArdDiffieHellman.Utf8Truncated(_options.Password);
+        byte[]? credentials = null, reply = null, wrapKey = null;
         try
         {
-            var (credentials, clientPublic, wrapKey) = ArdDiffieHellman.Respond(new(generator, prime, serverPublic), user, pass);
-            byte[] reply = [.. credentials, .. clientPublic];
+            (credentials, byte[] clientPublic, wrapKey) = ArdDiffieHellman.Respond(new(generator, prime, serverPublic), user, pass);
+            reply = [.. credentials, .. clientPublic];
             await WriteRawAsync(reply, ct).ConfigureAwait(false);
-            return wrapKey;
+            byte[] result = wrapKey;
+            wrapKey = null;
+            return result;
         }
         finally
         {
             CryptographicOperations.ZeroMemory(user);
             CryptographicOperations.ZeroMemory(pass);
+            if (credentials is not null) CryptographicOperations.ZeroMemory(credentials);
+            if (reply is not null) CryptographicOperations.ZeroMemory(reply);
+            if (wrapKey is not null) CryptographicOperations.ZeroMemory(wrapKey); // the send failed
         }
     }
 
@@ -328,7 +368,7 @@ public sealed class RfbSession : IAsyncDisposable
         var (key, iv) = await AwaitRekeyAsync(wrapKey, ct).ConfigureAwait(false);
         try
         {
-            _reader.SwitchSource(leftover => new RecordReaderStream(_transport, key, iv, leftover));
+            _reader.SwitchSource(leftover => _records = new RecordReaderStream(_transport, key, iv, leftover));
             _out = new OutgoingQueue(_transport, new RecordWriter(key, iv));
         }
         finally
@@ -382,13 +422,14 @@ public sealed class RfbSession : IAsyncDisposable
     /// <summary>Runs until the connection closes, fails, or <paramref name="ct"/> is cancelled.</summary>
     public async Task RunAsync(CancellationToken ct)
     {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _lifetime.Token);
         var token = linked.Token;
         var output = _out ?? throw new InvalidOperationException("Not connected.");
-        var writer = Task.Run(() => output.RunAsync(token), token);
+        var writer = _writeTask = Task.Run(() => output.RunAsync(token), token);
 
         output.Enqueue(SetPixelFormatMessage(PixelFormat.Bgrx32));
-        output.Enqueue(SetEncodingsMessage(EncodingList()));
+        output.Enqueue(EncodingsMessage());
         if (_apple && _matchPixelsPerPoint is null && _options.ServerScale is double scale && scale > 0 && scale < 1)
         {
             _requestedScale = scale;
@@ -396,9 +437,9 @@ public sealed class RfbSession : IAsyncDisposable
         }
         RequestUpdate(incremental: false);
 
-        var reader = Task.Run(() => ReadLoopAsync(token), token);
+        var reader = _readTask = Task.Run(() => ReadLoopAsync(token), token);
         var first = await Task.WhenAny(reader, writer).ConfigureAwait(false);
-        _lifetime.Cancel();
+        CancelLifetime();
         try
         {
             await first.ConfigureAwait(false);
@@ -443,8 +484,43 @@ public sealed class RfbSession : IAsyncDisposable
         return [.. list];
     }
 
+    /// <summary>Sends SetEncodings, and from then on accepts exactly what was asked for.</summary>
+    private byte[] EncodingsMessage()
+    {
+        int[] list = EncodingList();
+        // Updates already in flight may still use an earlier list, so the accepted set only grows.
+        _requested = [.. _requested, .. list];
+        return SetEncodingsMessage(list);
+    }
+
+    /// <summary>
+    /// Waits for the Mac's first encrypted record. It can only check out if the Mac recovered the
+    /// session keys, which came wrapped under the sign-in's secret: for RSA sign-in, proof that the
+    /// Mac holds its identity key's private half, and the point at which a new key may be pinned.
+    /// </summary>
+    private async Task AwaitFirstRecordAsync(CancellationToken ct)
+    {
+        if (_apple)
+        {
+            try
+            {
+                await _reader.EnsureAsync(1, ct).ConfigureAwait(false);
+            }
+            catch (ProtocolException)
+            {
+                throw new SecurityRefusedException(RefusalReason.IdentityNotProven,
+                    "The Mac's first encrypted message didn't check out, so it never proved it holds the " +
+                    (Info.Identity is null ? "sign-in's secret" : "identity key it presented") + ", and Vesper stopped. " +
+                    "Either someone tampered with the connection, or this Mac encrypts differently from what Vesper expects. If it keeps happening on a network you trust, try the SSH tunnel.");
+            }
+            if (Info.Identity is { } identity) _options.IdentityVerifier?.Proven(identity);
+        }
+        Secured?.Invoke();
+    }
+
     private async Task ReadLoopAsync(CancellationToken ct)
     {
+        await AwaitFirstRecordAsync(ct).ConfigureAwait(false);
         while (true)
         {
             byte type = await _reader.ReadU8Async(ct).ConfigureAwait(false);
@@ -491,6 +567,10 @@ public sealed class RfbSession : IAsyncDisposable
             int x = _reader.U16(), y = _reader.U16(), w = _reader.U16(), h = _reader.U16();
             int encoding = _reader.S32();
             var rc = new PixelRect(x, y, w, h);
+            if (!_requested.Contains(encoding))
+            {
+                throw new ProtocolException($"The Mac sent encoding {encoding}, which Vesper didn't ask for.");
+            }
 
             switch (encoding)
             {
@@ -697,7 +777,7 @@ public sealed class RfbSession : IAsyncDisposable
         int modelLength = BinaryPrimitives.ReadUInt16BigEndian(body.AsSpan(10));
         if (modelLength is < 2 or > 64 || 16 + modelLength > body.Length) return;
         string model = Encoding.ASCII.GetString(body, 16, modelLength - 1);
-        if (model.All(c => char.IsAsciiLetterOrDigit(c) || c == ','))
+        if (model != MacModel && model.All(c => char.IsAsciiLetterOrDigit(c) || c == ','))
         {
             MacModel = model;
             ModelIdentified?.Invoke(model);
@@ -898,7 +978,7 @@ public sealed class RfbSession : IAsyncDisposable
     {
         if (!_apple || _out is null || color == _color) return;
         _color = color;
-        _out.Enqueue(SetEncodingsMessage(EncodingList()));
+        _out.Enqueue(EncodingsMessage());
         RequestUpdate(incremental: false);
     }
 
@@ -958,9 +1038,23 @@ public sealed class RfbSession : IAsyncDisposable
     private async Task<string> ReadReasonAsync(CancellationToken ct)
     {
         uint length = await _reader.ReadU32Async(ct).ConfigureAwait(false);
-        if (length > 4096) return "(reason too long to show)";
+        if (length > 4096) return "(too long to show)";
         byte[] reason = await _reader.ReadBytesAsync((int)length, ct).ConfigureAwait(false);
-        return Encoding.UTF8.GetString(reason);
+        return Printable(Encoding.UTF8.GetString(reason), 200);
+    }
+
+    /// <summary>Server text with control and formatting characters (bidi overrides included) removed, cut to a length.</summary>
+    internal static string Printable(string text, int maxLength)
+    {
+        var sb = new StringBuilder(Math.Min(text.Length, maxLength));
+        foreach (char c in text)
+        {
+            if (sb.Length >= maxLength) { sb.Append('…'); break; }
+            var category = char.GetUnicodeCategory(c);
+            if (char.IsWhiteSpace(c)) { if (sb.Length > 0 && sb[^1] != ' ') sb.Append(' '); }
+            else if (category is not (System.Globalization.UnicodeCategory.Control or System.Globalization.UnicodeCategory.Format)) sb.Append(c);
+        }
+        return sb.ToString().Trim();
     }
 
     private async Task WriteRawAsync(byte[] data, CancellationToken ct)
@@ -969,9 +1063,21 @@ public sealed class RfbSession : IAsyncDisposable
         await _transport.FlushAsync(ct).ConfigureAwait(false);
     }
 
+    private void CancelLifetime()
+    {
+        try
+        {
+            _lifetime.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
-        _lifetime.Cancel();
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        CancelLifetime();
         try
         {
             await _transport.DisposeAsync().ConfigureAwait(false);
@@ -980,9 +1086,26 @@ public sealed class RfbSession : IAsyncDisposable
         {
             // Already gone.
         }
+
+        // The receive loop may be in the middle of a decode, and the send loop in the middle of a
+        // record: let them stop before freeing the zlib state and key material they're using.
+        foreach (var task in new[] { _readTask, _writeTask })
+        {
+            if (task is null) continue;
+            try
+            {
+                await task.ConfigureAwait(false);
+            }
+            catch
+            {
+                // Observed by RunAsync; here it only matters that the task has stopped.
+            }
+        }
         _out?.Dispose();
+        _records?.Dispose();
         _decode.Dispose();
-        _lifetime.Dispose();
+        // _lifetime isn't disposed: RunAsync may still be unwinding on another thread, and a
+        // CancellationTokenSource without a timer holds nothing that needs releasing.
     }
 }
 

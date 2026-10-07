@@ -34,26 +34,32 @@ Your Mac's screen, keystrokes and password are the most sensitive things on your
 Vesper's defaults assume a hostile network and an untrusted PC environment. See
 [SECURITY.md](SECURITY.md) for the full threat model.
 
-- **Encrypted end to end, always.** Every session runs inside Apple's AES record layer, for the
-  whole picture and every keystroke. Vesper always turns it on, while Apple's viewer leaves it off
-  by default.
+- **Encrypted end to end, always.** Every session with a Mac runs inside Apple's AES record layer,
+  for the whole picture and every keystroke. Vesper always turns it on, while Apple's viewer
+  leaves it off by default. A server that won't encrypt is refused before anything is sent
+  (other VNC servers work only inside the SSH tunnel).
 - **The Mac proves who it is.** Vesper signs in with the Mac's RSA identity key (Apple's
-  security type 33) and **pins it on first use**, like SSH. If it ever changes, Vesper stops
-  *before your password is sent* and says why.
+  security type 33) and **pins it on first use**, like SSH, but only once the Mac has proven it
+  holds the private key, so replaying a Mac's public key gets an impersonator nowhere. If the
+  key ever changes, Vesper stops *before your password is sent* and says why.
 - **Optional SSH tunnel** through the Mac's Remote Login, with a pinned host key. It's a
   direct-tcpip channel handed straight to the session, so no local port is opened and no other
   program on your PC can use the tunnel.
 - **No downgrades.** Apple's older Diffie-Hellman sign-in can't prove the Mac's identity, so
-  it's only used where something else does: inside the SSH tunnel, over Tailscale or WireGuard
-  (detected from the adapter the connection actually uses), or for a Mac you explicitly allow.
+  it's only used where something else does: inside the SSH tunnel, or straight to the Mac's own
+  Tailscale address (not through a subnet router, exit node or other VPN). Otherwise it needs
+  your explicit permission for that Mac, and even then never for a Mac that has proven its
+  identity key before.
 - **Passwords** are sealed with AES-256-GCM under a key protected by Windows (DPAPI), and
   optionally **locked behind Windows Hello**, so another program running as you can't read them
-  without a visible prompt. Unlocked passwords are wiped from memory after 15 idle minutes.
+  without a visible prompt. Each one is sealed together with where it may go, so a Mac's
+  settings edited behind Vesper's back don't get the saved password. Unlocked passwords are
+  wiped from memory after 15 idle minutes.
 - **Hidden from screen capture by default.** Session windows show up black to screenshots,
   screen recording, Teams or Zoom screen sharing, and **Windows Recall**.
 - **Clipboard sharing is off** unless you turn it on for a Mac. Even then it only works while
-  the session window is in front, and text from the Mac is kept **out of Windows clipboard
-  history and cloud clipboard sync**.
+  the session window is in front, copies your password manager marks private stay on Windows,
+  and text from the Mac is kept **out of Windows clipboard history and cloud clipboard sync**.
 - **No leaks from the app itself.** Nothing is logged to disk, and Windows Error Reporting is
   disabled for the process, since a crash dump would hold screen contents and session keys.
   Legacy DLL injection points (AppInit DLLs, global hook DLLs, Winsock LSPs) and DLLs from the
@@ -111,7 +117,9 @@ dotnet test tests\Vesper.Core.Tests
 `tools/Vesper.FakeMac` is a loopback-only stand-in for macOS Screen Sharing. It has Apple's
 handshake, RSA and Diffie-Hellman sign-in, the encrypted record layer, display layout, the
 cursor cache, pushed updates and the pasteboard. It draws a desktop that shows every key,
-click, scroll and clipboard change it receives.
+click, scroll and clipboard change it receives. It can also misbehave on purpose: speak plain
+VNC (`--rfb38`), refuse RSA logins (`--reject-rsa`), or impersonate a Mac by replaying its
+public key without the private key (`--impersonate`).
 
 ```powershell
 dotnet run --project tools\Vesper.FakeMac -- --animate --ssh-port 2222

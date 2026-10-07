@@ -18,9 +18,9 @@ public sealed class SessionTests : IAsyncLifetime
 
     public ValueTask InitializeAsync() => ValueTask.CompletedTask;
 
-    private int StartServer(bool offerRsa = true, bool offerDh = true, bool rfb38 = false)
+    private int StartServer(bool offerRsa = true, bool offerDh = true, bool rfb38 = false, bool impersonate = false)
     {
-        _serverOptions = new FakeMacOptions("vesper", "evening-star", _identity, offerRsa, offerDh, rfb38, Verbose: false);
+        _serverOptions = new FakeMacOptions("vesper", "evening-star", _identity, offerRsa, offerDh, rfb38, Verbose: false, Impersonate: impersonate);
         _listener = new TcpListener(IPAddress.Loopback, 0);
         _listener.Start();
         _ = Task.Run(async () =>
@@ -41,12 +41,15 @@ public sealed class SessionTests : IAsyncLifetime
     private sealed class Pin(Func<MacIdentity, bool> decide) : IMacIdentityVerifier
     {
         public MacIdentity? Seen { get; private set; }
+        public MacIdentity? ProvenKey { get; private set; }
 
         public ValueTask<bool> VerifyAsync(MacIdentity identity, CancellationToken ct)
         {
             Seen = identity;
             return ValueTask.FromResult(decide(identity));
         }
+
+        public void Proven(MacIdentity identity) => ProvenKey = identity;
     }
 
     private static async Task<RfbSession> ConnectAsync(int port, RfbSessionOptions options)
@@ -111,10 +114,11 @@ public sealed class SessionTests : IAsyncLifetime
     public async Task Diffie_hellman_is_used_only_when_allowed()
     {
         int port = StartServer(offerRsa: false);
-        await Assert.ThrowsAsync<AuthenticationFailedException>(() => ConnectAsync(port, new RfbSessionOptions
+        var refused = await Assert.ThrowsAsync<SecurityRefusedException>(() => ConnectAsync(port, new RfbSessionOptions
         {
             Username = "vesper", Password = "evening-star", Auth = AuthPolicy.RsaOnly,
         }));
+        Assert.Equal(RefusalReason.OnlyUnverifiableSignIn, refused.Reason);
 
         await using var session = await ConnectAsync(port, new RfbSessionOptions
         {
@@ -181,17 +185,121 @@ public sealed class SessionTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Plain_rfb_38_servers_still_work()
+    public async Task Plain_rfb_38_servers_work_only_when_the_transport_encrypts()
     {
         int port = StartServer(offerRsa: false, rfb38: true);
-        await using var session = await ConnectAsync(port, new RfbSessionOptions
+        var refused = await Assert.ThrowsAsync<SecurityRefusedException>(() => ConnectAsync(port, new RfbSessionOptions
         {
             Username = "vesper", Password = "evening-star", Auth = AuthPolicy.Any,
+        }));
+        Assert.Equal(RefusalReason.NotApple, refused.Reason);
+
+        await using var session = await ConnectAsync(port, new RfbSessionOptions
+        {
+            Username = "vesper", Password = "evening-star", Auth = AuthPolicy.Any, AllowUnencrypted = true,
         });
         Assert.False(session.Info.AppleExtensions);
+        Assert.False(session.Info.Encrypted);
         _ = session.RunAsync(_cts.Token);
         await WaitForAsync(() => FramebufferMatchesDesktop(session));
     }
+
+    [Fact]
+    public async Task Rsa_sign_in_is_never_used_without_apples_record_layer()
+    {
+        // A server that answers as plain RFB 3.8 but offers type 33 could replay a Mac's public
+        // key; without the record layer nothing would ever prove it holds the private half.
+        int port = StartServer(offerRsa: true, offerDh: false, rfb38: true);
+        var pin = new Pin(_ => true);
+        await Assert.ThrowsAsync<SecurityRefusedException>(() => ConnectAsync(port, new RfbSessionOptions
+        {
+            Username = "vesper", Password = "evening-star", IdentityVerifier = pin,
+        }));
+        await Assert.ThrowsAsync<AuthenticationFailedException>(() => ConnectAsync(port, new RfbSessionOptions
+        {
+            Username = "vesper", Password = "evening-star", IdentityVerifier = pin, AllowUnencrypted = true,
+        }));
+        Assert.Null(pin.Seen);
+    }
+
+    [Fact]
+    public async Task The_identity_is_proven_only_by_the_first_encrypted_record()
+    {
+        int port = StartServer();
+        var pin = new Pin(_ => true);
+        await using var session = await ConnectAsync(port, new RfbSessionOptions
+        {
+            Username = "vesper", Password = "evening-star", IdentityVerifier = pin,
+        });
+        Assert.NotNull(pin.Seen);
+        Assert.Null(pin.ProvenKey); // presented and trusted, but not yet proven
+        _ = session.RunAsync(_cts.Token);
+        await WaitForAsync(() => pin.ProvenKey is not null);
+        Assert.Equal(ArdRsaFingerprint(), pin.ProvenKey!.Fingerprint);
+    }
+
+    [Fact]
+    public async Task An_impersonator_replaying_the_public_key_is_caught_before_anything_is_trusted()
+    {
+        int port = StartServer(impersonate: true);
+        var pin = new Pin(_ => true);
+        await using var session = await ConnectAsync(port, new RfbSessionOptions
+        {
+            Username = "vesper", Password = "evening-star", IdentityVerifier = pin,
+        });
+        var refused = await Assert.ThrowsAsync<SecurityRefusedException>(() => session.RunAsync(_cts.Token));
+        Assert.Equal(RefusalReason.IdentityNotProven, refused.Reason);
+        Assert.Null(pin.ProvenKey);
+    }
+
+    [Fact]
+    public void Server_text_loses_control_characters_and_bidi_tricks()
+    {
+        Assert.Equal("Too many failures", RfbSession.Printable("Too many\r\n\tfailures", 200));
+        Assert.Equal("evil.com", RfbSession.Printable("‮evil​.com‬", 200));
+        Assert.Equal("abc…", RfbSession.Printable("abcdef", 3));
+    }
+
+    [Theory]
+    // Unprotected network, no opt-in: identity-key sign-in only.
+    [InlineData(false, false, false, false, false, true, false, false, false)]
+    // Opt-in for a Mac that never proved an identity key: both, and one retry with the older one.
+    [InlineData(false, false, true, false, false, true, true, true, false)]
+    // Opt-in, but the Mac has proven its key before: identity-key only (a missing type 33 is a downgrade).
+    [InlineData(false, false, true, true, false, true, false, false, false)]
+    // Straight to a Tailscale node: both; a refusal there is worth remembering.
+    [InlineData(false, true, false, true, false, true, true, true, true)]
+    // A refusal learned over Tailscale: straight to the older sign-in there.
+    [InlineData(false, true, false, false, true, false, true, false, true)]
+    // ...but not on an open network, where it means nothing.
+    [InlineData(false, false, false, false, true, true, false, false, false)]
+    // SSH: both, unencrypted servers allowed inside it.
+    [InlineData(true, false, false, true, false, true, true, true, true)]
+    public void Sign_in_policy_never_offers_an_unverifiable_sign_in_on_an_open_network(
+        bool ssh, bool tailscale, bool optIn, bool pinned, bool rsaRefused,
+        bool rsa, bool dh, bool retry, bool remember)
+    {
+        var policy = SignInPolicy.Decide(ssh, tailscale, optIn, pinned, rsaRefused);
+        Assert.Equal(rsa, policy.Auth.AllowRsa);
+        Assert.Equal(dh, policy.Auth.AllowDiffieHellman);
+        Assert.Equal(retry, policy.RetryWithDiffieHellman);
+        Assert.Equal(remember, policy.RememberRsaRefusal);
+        Assert.Equal(ssh, policy.AllowUnencrypted);
+    }
+
+    [Theory]
+    [InlineData("100.101.102.103", true)]
+    [InlineData("100.64.0.1", true)]
+    [InlineData("100.127.255.254", true)]
+    [InlineData("100.100.100.100", false)]  // Tailscale's own service address
+    [InlineData("100.128.0.1", false)]
+    [InlineData("192.168.1.20", false)]     // e.g. behind a subnet router
+    [InlineData("fd7a:115c:a1e0:ab12:4843:cd96:6258:b240", true)]
+    [InlineData("fd7a:115c:a1e0:b1a:0:7:c0a8:114", false)] // 4via6: an IPv4 subnet behind a router
+    [InlineData("fd7a:115c:a1e0::53", false)]
+    [InlineData("fd7a:115c:a1e1::1", false)]
+    public void Only_tailscale_node_addresses_count_as_authenticated(string address, bool expected) =>
+        Assert.Equal(expected, NetworkPath.IsTailscaleNodeAddress(IPAddress.Parse(address)));
 
     private sealed class HostKeyCheck(Func<SshHostKey, bool> decide) : IHostKeyVerifier
     {

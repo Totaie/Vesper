@@ -23,6 +23,8 @@ if (options is null)
           --new-identity      generate a new RSA identity key (tests Vesper's key-change warning)
           --ssh-port <n>      also run a fake Remote Login (SSH) on this port, for testing tunnels
           --reject-rsa        refuse every RSA (type 33) login, to test Vesper's fallback
+          --impersonate       act like someone replaying the Mac's public identity key without
+                              its private key (Vesper must stop at the first encrypted record)
           --verbose           log every protocol event
         """);
     return 1;
@@ -32,7 +34,7 @@ using var identity = LoadIdentity(options.NewIdentity);
 using var desktop = new Desktop(options.Width, options.Height, options.Density, options.Animate);
 var serverOptions = new FakeMacOptions(options.User, options.Password, identity,
     OfferRsa: options.Auth is "33" or "both", OfferDiffieHellman: options.Auth is "30" or "both",
-    options.Rfb38, options.Verbose, options.RejectRsa);
+    options.Rfb38, options.Verbose, options.RejectRsa, options.Impersonate);
 
 using var cts = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
@@ -98,7 +100,8 @@ static RSA LoadIdentity(bool regenerate)
 }
 
 internal sealed record Args(int Port, string User, string Password, int Width, int Height, double Density,
-    bool Animate, string Auth, bool Rfb38, bool NewIdentity, bool Verbose, int SshPort = 0, bool RejectRsa = false)
+    bool Animate, string Auth, bool Rfb38, bool NewIdentity, bool Verbose, int SshPort = 0, bool RejectRsa = false,
+    bool Impersonate = false)
 {
     public static Args? Parse(string[] argv)
     {
@@ -123,6 +126,7 @@ internal sealed record Args(int Port, string User, string Password, int Width, i
                 case "--verbose": a = a with { Verbose = true }; break;
                 case "--ssh-port": a = a with { SshPort = int.Parse(Next()) }; break;
                 case "--reject-rsa": a = a with { RejectRsa = true }; break;
+                case "--impersonate": a = a with { Impersonate = true }; break;
                 default: return null;
             }
         }

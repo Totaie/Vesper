@@ -31,7 +31,7 @@ public sealed partial class SettingsWindow : Window
         Root.RequestedTheme = App.ThemeFor(Settings.Theme);
 
         CaptureSwitch.IsOn = Settings.HideSessionsFromCapture;
-        HelloSwitch.IsOn = App.Current.Vault.UsesHello;
+        HelloSwitch.IsOn = Settings.RequireWindowsHello;
         LockBox.SelectedItem = LockBox.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == Settings.LockAfterMinutes.ToString())
             ?? LockBox.Items[1];
         ShortcutsBox.SelectedIndex = (int)Settings.WindowsShortcuts;
@@ -83,9 +83,10 @@ public sealed partial class SettingsWindow : Window
                 else vault.DisableHello();
             }
             Settings.RequireWindowsHello = vault.UsesHello;
+            vault.RequireHello = vault.UsesHello;
             Save();
         }
-        catch (InvalidOperationException ex)
+        catch (Exception ex)
         {
             Revert(vault.UsesHello);
             await Dialogs.InfoAsync(Content.XamlRoot, "Windows Hello", ex.Message);
@@ -109,14 +110,13 @@ public sealed partial class SettingsWindow : Window
     private async void ForgetAll_Click(object sender, RoutedEventArgs e)
     {
         bool ok = await Dialogs.ConfirmAsync(Content.XamlRoot, "Forget every saved password?",
-            "The encrypted vault is deleted. You'll be asked for each Mac's password the next time you connect.", "Forget passwords");
+            "The encrypted vault is deleted. You'll be asked for each Mac's password the next time you connect." +
+            (Settings.RequireWindowsHello ? " Windows Hello stays required: the next password you save creates a new vault behind it." : ""),
+            "Forget passwords");
         if (!ok) return;
         App.Current.Vault.ForgetAll();
         foreach (var p in App.Current.Data.Profiles) p.HasSavedPassword = false;
         App.Current.Data.SaveProfiles();
-        _loading = true;
-        HelloSwitch.IsOn = false;
-        _loading = false;
     }
 
     private void Shortcuts_Changed(object sender, SelectionChangedEventArgs e)

@@ -39,7 +39,15 @@ public static class AppleRecordLayer
             throw new Rfb.ProtocolException($"The rekey carried {body.Length} bytes, not {RekeyLength}.");
         }
         using var aes = Aes.Create();
-        aes.Key = wrapKey.ToArray();
+        byte[] keyCopy = wrapKey.ToArray();
+        try
+        {
+            aes.Key = keyCopy; // Aes keeps its own copy, which it wipes when disposed
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(keyCopy);
+        }
         uint generation = BinaryPrimitives.ReadUInt32BigEndian(body);
         byte[] key = aes.DecryptEcb(body.Slice(4, Block), PaddingMode.None);
         byte[] iv = aes.DecryptEcb(body.Slice(4 + Block, Block), PaddingMode.None);

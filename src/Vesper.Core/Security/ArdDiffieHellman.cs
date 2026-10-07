@@ -14,8 +14,9 @@ namespace Vesper.Core.Security;
 /// MD5 of the shared secret, left-padded to the key length.
 ///
 /// The exchange has no server authentication, so on its own it hides the password only from a
-/// passive eavesdropper. Vesper relies on the transport (SSH or a WireGuard VPN) for real
-/// confidentiality, and treats a bare connection as untrusted.
+/// passive eavesdropper. Vesper uses it only where the path proves which machine answers (an
+/// SSH tunnel, or straight to a Tailscale node's address) or where the user allowed it, and
+/// treats a bare connection as untrusted.
 /// </summary>
 public static class ArdDiffieHellman
 {

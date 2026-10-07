@@ -24,6 +24,13 @@ public sealed class Framebuffer
 {
     /// <summary>Refuse absurd sizes from a hostile server instead of allocating gigabytes.</summary>
     public const int MaxDimension = 16384;
+
+    /// <summary>
+    /// 2^27 pixels (512 MiB): room for every display of a fully loaded Mac Studio side by side at
+    /// native resolution, but not for 16384 × 16384.
+    /// </summary>
+    public const long MaxPixels = 1L << 27;
+
     private const int MaxDirtyRects = 48;
 
     private readonly List<PixelRect> _dirty = [];
@@ -56,7 +63,7 @@ public sealed class Framebuffer
 
     private void Allocate(int width, int height)
     {
-        if (width <= 0 || height <= 0 || width > MaxDimension || height > MaxDimension)
+        if (width <= 0 || height <= 0 || width > MaxDimension || height > MaxDimension || (long)width * height > MaxPixels)
         {
             throw new ProtocolException($"The Mac reported an unusable screen size ({width}×{height}).");
         }

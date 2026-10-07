@@ -27,6 +27,39 @@ internal static unsafe partial class Native
     [LibraryImport("kernel32.dll")]
     public static partial nint LocalFree(nint mem);
 
+    // ── Clipboard ──────────────────────────────────────────────────────────
+
+    [LibraryImport("user32.dll", EntryPoint = "RegisterClipboardFormatW", StringMarshalling = StringMarshalling.Utf16)]
+    public static partial uint RegisterClipboardFormat(string name);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool IsClipboardFormatAvailable(uint format);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool OpenClipboard(nint owner);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool CloseClipboard();
+
+    [LibraryImport("user32.dll")]
+    public static partial nint GetClipboardData(uint format);
+
+    [LibraryImport("user32.dll")]
+    public static partial uint GetClipboardSequenceNumber();
+
+    [LibraryImport("kernel32.dll")]
+    public static partial nint GlobalLock(nint mem);
+
+    [LibraryImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GlobalUnlock(nint mem);
+
+    [LibraryImport("kernel32.dll")]
+    public static partial nuint GlobalSize(nint mem);
+
     // ── Windows ────────────────────────────────────────────────────────────
 
     public const uint WDA_NONE = 0x0, WDA_EXCLUDEFROMCAPTURE = 0x11;

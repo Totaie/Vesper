@@ -34,7 +34,11 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
     private readonly DispatcherTimer _statsTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly DispatcherTimer _floatingTimer = new() { Interval = TimeSpan.FromSeconds(2.5) };
     private readonly nint _hwnd;
+    private readonly HashSet<uint> _keptFromWindows = [];
     private string? _password;
+    private (string Password, bool Remember)? _typedPassword;
+    private string? _approvedIdentity;
+    private string? _approvedSshKey;
     private ConnectedMac? _connection;
     private ClipboardBridge? _clipboard;
     private CancellationTokenSource? _cts;
@@ -125,11 +129,27 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         ShowConnecting();
         string? password = _password;
         _password = null;
+        string? problem = null;
         if (password is null && _profile.HasSavedPassword && await UnlockVaultAsync())
         {
-            if (App.Current.Vault.TryGetPassword(_profile.Id, out string saved)) password = saved;
+            switch (App.Current.Vault.TryGetPassword(_profile, out string saved))
+            {
+                case VaultLookup.Found:
+                    password = saved;
+                    _typedPassword = null;
+                    break;
+                case VaultLookup.Mismatch:
+                    Diagnostics.Add($"The saved password for {_profile.Host} is sealed for different settings; not using it.");
+                    problem = "This Mac's address, account or security settings changed since its password was saved, so Vesper won't send the saved password without asking. " +
+                              "If you didn't change them in Vesper, something else on this PC did: check them before connecting.";
+                    break;
+            }
         }
-        password ??= await AskPasswordAsync(null);
+        if (password is null)
+        {
+            _typedPassword = await AskPasswordAsync(problem);
+            password = _typedPassword?.Password;
+        }
         if (password is null)
         {
             ShowProblem("Not connected", "No password was entered.", retry: true);
@@ -141,17 +161,24 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         var progress = new Progress<ConnectStage>(SetStage);
         try
         {
-            _connection = await App.Current.Connections.ConnectAsync(_profile, password, _rasterScale, this, progress, _cts.Token);
+            var connection = await App.Current.Connections.ConnectAsync(_profile, password, _rasterScale, this, progress, _cts.Token);
+            if (_closing)
+            {
+                // The window closed while the last step finished: don't leave a session running.
+                await connection.DisposeAsync();
+                return;
+            }
+            _connection = connection;
         }
         catch (AuthenticationFailedException e) when (e.CredentialsRejected)
         {
-            string? again = await AskPasswordAsync(e.Message);
-            if (again is null)
+            _typedPassword = await AskPasswordAsync(e.Message);
+            if (_typedPassword is null)
             {
                 ShowProblem("Not connected", e.Message, retry: true, edit: true);
                 return;
             }
-            _password = again;
+            _password = _typedPassword.Value.Password;
             await ConnectAsync();
             return;
         }
@@ -162,7 +189,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         catch (Exception e) when (_promptedThisAttempt && !_closing && e is ConnectionClosedException or IOException or TimeoutException)
         {
             // The Mac gave up on the half-finished sign-in while the trust prompt was being read.
-            // The key is pinned now, so the next attempt goes straight through.
+            // The key was approved, so the next attempt goes straight through.
             Diagnostics.Add($"Connection to {_profile.Host} timed out during a trust prompt; retrying.");
             _password = password;
             await ConnectAsync();
@@ -170,8 +197,10 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         }
         catch (Exception e)
         {
-            Diagnostics.Add($"Connect to {_profile.Host} failed: {e.GetType().Name}: {e.Message}");
-            ShowProblem(e is IdentityRejectedException ? "Connection stopped" : "Couldn't connect", Explain(e), retry: true, edit: e is not IdentityRejectedException);
+            Diagnostics.Add($"Connect to {_profile.Host} failed: {e.GetType().Name}: {e.Message}" +
+                (e is ConnectionRefusedException refused ? $" The Mac said: \"{refused.ServerReason}\"" : ""));
+            bool stopped = e is IdentityRejectedException or SecurityRefusedException;
+            ShowProblem(stopped ? "Connection stopped" : "Couldn't connect", Explain(e), retry: true, edit: e is not IdentityRejectedException);
             return;
         }
         finally
@@ -179,6 +208,33 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
             password = null;
         }
         OnConnected();
+    }
+
+    /// <summary>
+    /// A typed password is remembered (or a saved one forgotten) only once the Mac has accepted it
+    /// and proven itself: an impersonator can say "accepted" to anything.
+    /// </summary>
+    private async Task SaveTypedPasswordAsync()
+    {
+        if (_typedPassword is not { } typed) return;
+        _typedPassword = null;
+        try
+        {
+            if (typed.Remember && await UnlockVaultAsync())
+            {
+                App.Current.Vault.SetPassword(_profile, typed.Password);
+                Remember(p => p.HasSavedPassword = true);
+            }
+            else if (!typed.Remember && _profile.HasSavedPassword)
+            {
+                if (await UnlockVaultAsync()) App.Current.Vault.Forget(_profile.Id);
+                Remember(p => p.HasSavedPassword = false);
+            }
+        }
+        catch (Exception e)
+        {
+            ShowNotice("The password couldn't be saved: " + e.Message, InfoBarSeverity.Warning);
+        }
     }
 
     private void OnConnected()
@@ -190,11 +246,27 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         session.CursorChanged += shape => DispatcherQueue.TryEnqueue(() => ApplyCursor(shape));
         session.LayoutChanged += layout => DispatcherQueue.TryEnqueue(() => OnLayout(layout));
         session.Resized += (_, _) => DispatcherQueue.TryEnqueue(UpdateTitle);
-        session.ModelIdentified += model => DispatcherQueue.TryEnqueue(() => Remember(p => p.MacModel = model));
+        session.ModelIdentified += model => DispatcherQueue.TryEnqueue(() =>
+        {
+            if (_profile.MacModel != model) Remember(p => p.MacModel = model);
+        });
         session.Notice += text => DispatcherQueue.TryEnqueue(() => ShowNotice(text, InfoBarSeverity.Informational));
 
+        // The screen, input and the security badge wait until the Mac's first encrypted message
+        // has proven who's at the other end.
+        session.Secured += () => DispatcherQueue.TryEnqueue(() =>
+        {
+            if (_connection == connection) OnSecured(connection);
+        });
+        _ = RunAsync(connection);
+    }
+
+    private void OnSecured(ConnectedMac connection)
+    {
+        var session = connection.Session;
         _clipboard = new ClipboardBridge(session, _profile.ShareClipboard);
         _clipboard.ReceivedFromMac += chars => ShowNotice($"Copied from the Mac ({chars:N0} characters)", InfoBarSeverity.Success, quiet: true);
+        _clipboard.KeptPrivate += () => ShowNotice("Not shared with the Mac: the app you copied from marked it private, as password managers do.", InfoBarSeverity.Informational, quiet: true);
         _clipboard.SetActive(_active);
 
         ShowSecurity(connection.Security, session.Info);
@@ -208,12 +280,12 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
             StatsText.Visibility = Visibility.Visible;
             _statsTimer.Start();
         }
-        _ = RunAsync(connection);
+        _ = SaveTypedPasswordAsync();
     }
 
     private async Task RunAsync(ConnectedMac connection)
     {
-        string reason = "The Mac closed the connection.";
+        string title = "Disconnected", reason = "The Mac closed the connection.";
         try
         {
             await connection.Session.RunAsync(_cts!.Token);
@@ -224,12 +296,13 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         }
         catch (Exception e)
         {
+            if (e is SecurityRefusedException) title = "Connection stopped";
             reason = Explain(e, duringSession: true);
             Diagnostics.Add($"Session with {_profile.Host} ended: {e.GetType().Name}: {e.Message}");
         }
         if (_closing) return;
         await TearDownAsync();
-        ShowProblem("Disconnected", reason, retry: true);
+        ShowProblem(title, reason, retry: true);
     }
 
     private async Task TearDownAsync()
@@ -250,7 +323,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
 
     private static string Explain(Exception e, bool duringSession = false) => e switch
     {
-        IdentityRejectedException or AuthenticationFailedException or TimeoutException => e.Message,
+        IdentityRejectedException or AuthenticationFailedException or SecurityRefusedException or ConnectionRefusedException or TimeoutException => e.Message,
         ConnectionClosedException => "The Mac closed the connection. It may have been restarted, put to sleep, or had Screen Sharing turned off.",
         IOException or SocketException when duringSession =>
             "The connection to the Mac was lost. It may have gone to sleep, restarted, or left the network.",
@@ -308,16 +381,18 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
     {
         var dialog = new MacEditorDialog(_profile, null) { XamlRoot = Root.XamlRoot, RequestedTheme = Root.ActualTheme };
         if (await dialog.ShowAsync() == ContentDialogResult.None || dialog.Result is not { } result) return;
+        var before = _profile.Clone();
         CopyProfile(result, _profile);
-        if (dialog.Password is { Length: > 0 } pw)
+        try
         {
-            _password = pw;
-            if (dialog.RememberPassword && await UnlockVaultAsync())
-            {
-                App.Current.Vault.SetPassword(_profile.Id, pw);
-                _profile.HasSavedPassword = true;
-            }
+            await SavedPasswords.ApplyEditAsync(before, _profile, dialog.Password, dialog.RememberPassword, UnlockVaultAsync);
         }
+        catch (Exception ex)
+        {
+            ShowNotice("The password couldn't be saved: " + ex.Message, InfoBarSeverity.Warning);
+        }
+        if (dialog.Password is { Length: > 0 } pw) _password = pw;
+        _typedPassword = null;
         App.Current.Data.Upsert(_profile);
         MacName.Text = MacCardItem.DisplayName(_profile);
         await ConnectAsync();
@@ -339,14 +414,15 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         {
             return await App.Current.Vault.UnlockAsync();
         }
-        catch (InvalidOperationException e)
+        catch (Exception e)
         {
             ShowNotice(e.Message, InfoBarSeverity.Warning);
             return false;
         }
     }
 
-    private async Task<string?> AskPasswordAsync(string? problem)
+    /// <summary>Asks for the password. Whether to remember it is decided here but applied only after the Mac accepts it.</summary>
+    private async Task<(string Password, bool Remember)?> AskPasswordAsync(string? problem)
     {
         var password = new PasswordBox { Header = $"Password for {_profile.Username}", PasswordRevealMode = PasswordRevealMode.Peek };
         var remember = new CheckBox { Content = "Remember on this PC (encrypted)", IsChecked = _profile.HasSavedPassword || problem is null };
@@ -375,37 +451,44 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         };
         password.Loaded += (_, _) => password.Focus(FocusState.Programmatic);
         if (await dialog.ShowAsync() != ContentDialogResult.Primary || password.Password.Length == 0) return null;
-        string value = password.Password;
-        if (remember.IsChecked == true && await UnlockVaultAsync())
-        {
-            App.Current.Vault.SetPassword(_profile.Id, value);
-            Remember(p => p.HasSavedPassword = true);
-        }
-        else if (remember.IsChecked != true && _profile.HasSavedPassword && await UnlockVaultAsync())
-        {
-            App.Current.Vault.Forget(_profile.Id);
-            Remember(p => p.HasSavedPassword = false);
-        }
-        return value;
+        return (password.Password, remember.IsChecked == true);
     }
 
+    // A key approved in this window counts as approved for the rest of its life: a Mac that gave up
+    // while the prompt was open gets the retry without asking twice. It's pinned only once the
+    // Mac proves it holds the key.
+
     Task<bool> ITrustPrompts.TrustMacIdentityAsync(MacProfile profile, MacIdentity identity, string? previous) =>
-        OnUiAsync(() => { _promptedThisAttempt = true; return TrustDialogAsync(
-            previous is null ? $"First connection to {MacCardItem.DisplayName(profile)}" : "This Mac's identity has changed",
-            previous is null
-                ? "Vesper hasn't met this Mac before. It will remember the Mac's identity key and warn you if it ever changes, so nobody can quietly pretend to be your Mac later. If you can, check this fingerprint against one you trust."
-                : $"The identity key {profile.Host} presented doesn't match the one you trusted. That happens after reinstalling macOS or resetting Screen Sharing, but it's also exactly what someone intercepting the connection would look like. If you didn't expect it, disconnect.",
-            $"RSA {identity.KeySizeBits}-bit key",
-            identity.Fingerprint, previous, verifyCommand: null); });
+        OnUiAsync(async () =>
+        {
+            if (identity.Fingerprint == _approvedIdentity) return true;
+            _promptedThisAttempt = true;
+            bool trusted = await TrustDialogAsync(
+                previous is null ? $"First connection to {MacCardItem.DisplayName(profile)}" : "This Mac's identity has changed",
+                previous is null
+                    ? "Vesper hasn't met this Mac before. It will remember the Mac's identity key and warn you if it ever changes, so nobody can quietly pretend to be your Mac later. If you can, check this fingerprint against one you trust."
+                    : $"The identity key {profile.Host} presented doesn't match the one you trusted. That happens after reinstalling macOS or resetting Screen Sharing, but it's also exactly what someone intercepting the connection would look like. If you didn't expect it, disconnect.",
+                $"RSA {identity.KeySizeBits}-bit key",
+                identity.Fingerprint, previous, verifyCommand: null);
+            if (trusted) _approvedIdentity = identity.Fingerprint;
+            return trusted;
+        });
 
     Task<bool> ITrustPrompts.TrustSshHostKeyAsync(MacProfile profile, SshHostKey key, string? previous) =>
-        OnUiAsync(() => { _promptedThisAttempt = true; return TrustDialogAsync(
-            previous is null ? $"First SSH connection to {MacCardItem.DisplayName(profile)}" : "This Mac's SSH host key has changed",
-            previous is null
-                ? "Vesper will pin this SSH host key and refuse to send your password if it ever changes. To be certain it's your Mac, compare it with what Terminal on the Mac prints for:"
-                : $"The SSH host key {profile.Host} presented doesn't match the one you trusted. Unless you reinstalled macOS or regenerated its SSH keys, someone may be intercepting the connection. Compare it with what Terminal on the Mac prints for:",
-            $"{key.FriendlyAlgorithm} host key",
-            key.Fingerprint, previous, verifyCommand: key.VerifyCommand); });
+        OnUiAsync(async () =>
+        {
+            if (key.Fingerprint == _approvedSshKey) return true;
+            _promptedThisAttempt = true;
+            bool trusted = await TrustDialogAsync(
+                previous is null ? $"First SSH connection to {MacCardItem.DisplayName(profile)}" : "This Mac's SSH host key has changed",
+                previous is null
+                    ? "Vesper will pin this SSH host key and refuse to send your password if it ever changes. To be certain it's your Mac, compare it with what Terminal on the Mac prints for:"
+                    : $"The SSH host key {profile.Host} presented doesn't match the one you trusted. Unless you reinstalled macOS or regenerated its SSH keys, someone may be intercepting the connection. Compare it with what Terminal on the Mac prints for:",
+                $"{key.FriendlyAlgorithm} host key",
+                key.Fingerprint, previous, verifyCommand: key.VerifyCommand);
+            if (trusted) _approvedSshKey = key.Fingerprint;
+            return trusted;
+        });
 
     private async Task<bool> TrustDialogAsync(string title, string body, string keyKind, string fingerprint, string? previous, string? verifyCommand)
     {
@@ -523,7 +606,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         SecurityPill.Visibility = Visibility.Visible;
         if (security.Level == SecurityLevel.Unverified)
         {
-            ShowNotice("This connection is encrypted, but the Mac's identity can't be verified on this network. Consider an SSH tunnel or a VPN.", InfoBarSeverity.Warning);
+            ShowNotice("This connection is encrypted, but the Mac's identity can't be verified on this network. Consider an SSH tunnel or Tailscale.", InfoBarSeverity.Warning);
         }
         else if (security.Level == SecurityLevel.Unencrypted)
         {
@@ -719,13 +802,30 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
     {
         bool want = _connection is not null && _active && _surfaceFocused && CaptureShortcuts && !(Info?.ObserveOnly ?? true);
         _keys.SendWindowsKey = want;
-        if (want) _hook.Install();
-        else _hook.Uninstall();
+        if (want)
+        {
+            _hook.Install();
+        }
+        else
+        {
+            _hook.Uninstall();
+            _keptFromWindows.Clear();
+        }
     }
 
     private bool OnHookKey(PhysicalKey key)
     {
+        uint id = key.VirtualKey | (key.Extended ? 0x10000u : 0);
+        if (!key.Down)
+        {
+            // A release is kept from Windows only if its press was. A key already held when the
+            // hook went in (Ctrl, say) must be let go in Windows too, or Windows thinks it's stuck.
+            if (!_keptFromWindows.Remove(id)) return false;
+            Send(key.VirtualKey, key.ScanCode, key.Extended, down: false);
+            return true;
+        }
         if (_connection is null || !_active || !_surfaceFocused || Native.GetForegroundWindow() != _hwnd) return false;
+        _keptFromWindows.Add(id);
         if (HandleLocalShortcut(key.VirtualKey, key.Down)) return true;
         Send(key.VirtualKey, key.ScanCode, key.Extended, key.Down);
         return true;
@@ -885,7 +985,8 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         Notice.Severity = severity;
         Notice.Message = message;
         Notice.IsOpen = true;
-        if (quiet || severity != InfoBarSeverity.Warning)
+        // Warnings and errors stay until closed; the rest fade.
+        if (quiet || severity is not (InfoBarSeverity.Warning or InfoBarSeverity.Error))
         {
             var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(quiet ? 3 : 6) };
             timer.Tick += (_, _) =>

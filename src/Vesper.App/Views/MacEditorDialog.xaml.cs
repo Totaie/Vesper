@@ -43,6 +43,7 @@ public sealed partial class MacEditorDialog : ContentDialog
         ClipboardSwitch.IsOn = _profile.ShareClipboard;
         ViewOnlySwitch.IsOn = _profile.ViewOnly;
         LegacySwitch.IsOn = _profile.AllowLegacySignIn;
+        RsaRefusedPanel.Visibility = _profile.RsaSignInUnsupported ? Visibility.Visible : Visibility.Collapsed;
 
         PrimaryButtonClick += (_, _) => Commit(connect: true);
         SecondaryButtonClick += (_, _) => Commit(connect: false);
@@ -116,4 +117,10 @@ public sealed partial class MacEditorDialog : ContentDialog
 
     private void Transport_Changed(object sender, SelectionChangedEventArgs e) =>
         SshPortBox.Visibility = TransportChoice.SelectedIndex == 1 ? Visibility.Visible : Visibility.Collapsed;
+
+    private void RetryRsa_Click(object sender, RoutedEventArgs e)
+    {
+        _profile.RsaSignInUnsupported = false;
+        RsaRefusedPanel.Visibility = Visibility.Collapsed;
+    }
 }

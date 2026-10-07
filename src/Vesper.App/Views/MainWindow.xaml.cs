@@ -37,6 +37,14 @@ public sealed partial class MainWindow : Window
         Refresh();
         UpdateGreeting();
         if (App.Current.Data.Settings.FindMacsNearby) StartDiscovery();
+        Root.Loaded += async (_, _) =>
+        {
+            if (App.Current.StartupWarning is { } warning)
+            {
+                App.Current.StartupWarning = null;
+                await Dialogs.InfoAsync(Content.XamlRoot, "Saved passwords set aside", warning);
+            }
+        };
     }
 
     internal void ApplyTheme() => Root.RequestedTheme = App.ThemeFor(App.Current.Data.Settings.Theme);
@@ -110,18 +118,13 @@ public sealed partial class MainWindow : Window
         var dialog = new MacEditorDialog(existing, discovered) { XamlRoot = Content.XamlRoot, RequestedTheme = Root.ActualTheme };
         if (await dialog.ShowAsync() != ContentDialogResult.None && dialog.Result is { } result)
         {
-            if (dialog.Password is { Length: > 0 } password && dialog.RememberPassword)
+            try
             {
-                if (await EnsureVaultAsync())
-                {
-                    App.Current.Vault.SetPassword(result.Id, password);
-                    result.HasSavedPassword = true;
-                }
+                await SavedPasswords.ApplyEditAsync(existing, result, dialog.Password, dialog.RememberPassword, EnsureVaultAsync);
             }
-            else if (!dialog.RememberPassword && result.HasSavedPassword)
+            catch (Exception e)
             {
-                App.Current.Vault.Forget(result.Id);
-                result.HasSavedPassword = false;
+                await Dialogs.InfoAsync(Content.XamlRoot, "Password not saved", e.Message);
             }
             App.Current.Data.Upsert(result);
             if (dialog.ConnectAfterSaving) SessionWindow.Open(result, dialog.Password);
@@ -134,7 +137,7 @@ public sealed partial class MainWindow : Window
         {
             return await App.Current.Vault.UnlockAsync();
         }
-        catch (InvalidOperationException e)
+        catch (Exception e)
         {
             await Dialogs.InfoAsync(Content.XamlRoot, "Saved passwords unavailable", e.Message);
             return false;
@@ -154,24 +157,41 @@ public sealed partial class MainWindow : Window
     private async void ForgetPassword_Click(object sender, RoutedEventArgs e)
     {
         if (ProfileFrom(sender) is not { } profile) return;
-        if (await EnsureVaultAsync())
+        try
         {
-            App.Current.Vault.Forget(profile.Id);
-            profile.HasSavedPassword = false;
-            App.Current.Data.Upsert(profile);
+            if (await EnsureVaultAsync()) App.Current.Vault.Forget(profile.Id);
         }
+        catch (Exception ex)
+        {
+            await Dialogs.InfoAsync(Content.XamlRoot, "Couldn't update saved passwords", ex.Message);
+        }
+        profile.HasSavedPassword = false;
+        App.Current.Data.Upsert(profile);
     }
 
     private async void ForgetIdentity_Click(object sender, RoutedEventArgs e)
     {
         if (ProfileFrom(sender) is not { } profile) return;
         bool ok = await Dialogs.ConfirmAsync(Content.XamlRoot, "Forget this Mac's identity?",
-            "Vesper will ask you to verify the Mac's identity key (and SSH host key) again on the next connection. Do this after reinstalling macOS or resetting Screen Sharing.",
+            "Vesper will ask you to verify the Mac's identity key (and SSH host key) again on the next connection, and will try its identity-key sign-in again. Do this after reinstalling macOS or resetting Screen Sharing.",
             "Forget identity");
         if (!ok) return;
+        byte[] before = SecretVault.Binding(profile);
         profile.PinnedIdentityFingerprint = null;
         profile.PinnedSshKey = null;
         profile.PinnedSshKeyAlgorithm = null;
+        profile.RsaSignInUnsupported = false;
+        try
+        {
+            if (profile.HasSavedPassword && await EnsureVaultAsync())
+            {
+                App.Current.Vault.Rebind(profile.Id, before, SecretVault.Binding(profile));
+            }
+        }
+        catch (Exception ex)
+        {
+            await Dialogs.InfoAsync(Content.XamlRoot, "Couldn't update saved passwords", ex.Message);
+        }
         App.Current.Data.Upsert(profile);
     }
 
@@ -181,8 +201,14 @@ public sealed partial class MainWindow : Window
         bool ok = await Dialogs.ConfirmAsync(Content.XamlRoot, $"Remove {MacCardItem.DisplayName(profile)}?",
             "Its settings, trusted identity and saved password are deleted from this PC.", "Remove");
         if (!ok) return;
-        if (profile.HasSavedPassword && App.Current.Vault.IsUnlocked) App.Current.Vault.Forget(profile.Id);
-        else if (profile.HasSavedPassword && await EnsureVaultAsync()) App.Current.Vault.Forget(profile.Id);
+        try
+        {
+            if (profile.HasSavedPassword && await EnsureVaultAsync()) App.Current.Vault.Forget(profile.Id);
+        }
+        catch (Exception ex)
+        {
+            await Dialogs.InfoAsync(Content.XamlRoot, "Couldn't update saved passwords", ex.Message);
+        }
         App.Current.Data.Remove(profile.Id);
     }
 

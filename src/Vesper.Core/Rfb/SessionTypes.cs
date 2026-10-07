@@ -36,16 +36,37 @@ public interface IMacIdentityVerifier
     /// <summary>
     /// Decide whether to trust the key. Pinned keys should match silently; a first sighting or a
     /// change should involve the user. Returning false aborts the connection before any credential
-    /// is sent.
+    /// is sent. Don't pin here: presenting a public key proves nothing, since anyone can ask a Mac
+    /// for it and replay it.
     /// </summary>
     ValueTask<bool> VerifyAsync(MacIdentity identity, CancellationToken ct);
+
+    /// <summary>
+    /// The Mac has proven it holds the key's private half: the session keys came wrapped under a
+    /// secret only that half could recover, and the first encrypted record checked out. This is
+    /// the moment to pin a newly trusted key. Called once, on the receive thread.
+    /// </summary>
+    void Proven(MacIdentity identity);
 }
 
 public sealed class RfbSessionOptions
 {
+    private string _password = "";
+
     public required string Username { get; init; }
-    public required string Password { get; init; }
+
+    /// <summary>Used during sign-in only; the session drops its reference once sign-in is over.</summary>
+    public required string Password { get => _password; init => _password = value; }
+
     public AuthPolicy Auth { get; init; } = AuthPolicy.RsaOnly;
+
+    /// <summary>
+    /// Accept a server that doesn't speak Apple's 003.889. Its session has no encryption of its own,
+    /// so this is only for transports that encrypt and authenticate the far end themselves (the SSH
+    /// tunnel). Off by default: Vesper refuses such a server.
+    /// </summary>
+    public bool AllowUnencrypted { get; init; }
+
     public IMacIdentityVerifier? IdentityVerifier { get; init; }
     public bool ViewOnly { get; init; }
     public bool ClipboardFromMac { get; init; }
@@ -70,6 +91,9 @@ public sealed class RfbSessionOptions
 
     /// <summary>Reports progress through the handshake, for the connecting screen.</summary>
     public Action<SessionStage>? StageChanged { get; init; }
+
+    /// <summary>.NET strings can't be wiped, but the session needn't keep this one reachable.</summary>
+    internal void ForgetPassword() => _password = "";
 }
 
 public enum SessionStage { SigningIn, Encrypting, Ready }

@@ -41,10 +41,14 @@ public partial class App : Application
     internal ConnectionService Connections { get; private set; } = null!;
     internal List<SessionWindow> Sessions { get; } = [];
 
+    /// <summary>Something found at startup that the user needs to hear about, shown by the main window once.</summary>
+    internal string? StartupWarning { get; set; }
+
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        Vault = new SecretVault(Data.VaultPath);
-        Connections = new ConnectionService(Data);
+        Vault = new SecretVault(Data.VaultPath) { RequireHello = Data.Settings.RequireWindowsHello };
+        CheckVault();
+        Connections = new ConnectionService(Data, Vault);
         _main = new MainWindow();
         _main.Activate();
 
@@ -59,6 +63,33 @@ public partial class App : Application
             }
         };
         _lockTimer.Start();
+    }
+
+    /// <summary>
+    /// The vault's protection must be what the user chose. settings.json and vault.bin can both be
+    /// rewritten by any program running as the user, so a vault that doesn't need Windows Hello
+    /// when Hello is required isn't one Vesper made: it's set aside rather than trusted with new
+    /// passwords.
+    /// </summary>
+    private void CheckVault()
+    {
+        if (Vault.UsesHello && !Data.Settings.RequireWindowsHello)
+        {
+            // A Hello vault can't be opened without Hello whatever the setting says; show it truthfully.
+            Data.Settings.RequireWindowsHello = true;
+            Data.SaveSettings();
+            Vault.RequireHello = true;
+        }
+        else if (Data.Settings.RequireWindowsHello && Vault.Exists && !Vault.UsesHello)
+        {
+            Vault.SetAside();
+            foreach (var p in Data.Profiles) p.HasSavedPassword = false;
+            Data.SaveProfiles();
+            Diagnostics.Add("The password vault didn't require Windows Hello although Vesper does; it was set aside.");
+            StartupWarning = "Vesper's password vault had been replaced with one that doesn't need Windows Hello, which Vesper doesn't do. " +
+                "It was set aside unopened, so Vesper will ask for your Macs' passwords again. Software on this PC may have tampered with it: " +
+                "consider scanning for malware and changing those passwords.";
+        }
     }
 
     internal void ShowMain()

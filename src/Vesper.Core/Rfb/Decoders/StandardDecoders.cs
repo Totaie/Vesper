@@ -64,9 +64,14 @@ internal static class StandardDecoders
             Px.Fill(fb, rc.X, rc.Y, rc.Width, rc.Height, bg);
         }
         const int SubrectSize = 12;
-        int batchMax = r.Capacity / SubrectSize;
+        // Subrectangles may overlap, so their count alone doesn't bound the work: a hostile server
+        // could repaint the whole rectangle once per pixel. An encoder never needs to paint much
+        // more than the rectangle itself, so the total painted is capped.
+        long budget = rc.Area * 4;
+        int batchMax = Math.Min(r.Capacity / SubrectSize, 4096);
         while (count > 0)
         {
+            ct.ThrowIfCancellationRequested();
             int batch = (int)Math.Min(count, (uint)batchMax);
             await r.EnsureAsync(batch * SubrectSize, ct).ConfigureAwait(false);
             lock (fb.Sync)
@@ -78,6 +83,11 @@ internal static class StandardDecoders
                     if (x + w > rc.Width || y + h > rc.Height)
                     {
                         throw new ProtocolException("RRE subrectangle lies outside its rectangle.");
+                    }
+                    budget -= (long)w * h;
+                    if (budget < 0)
+                    {
+                        throw new ProtocolException("RRE rectangle paints far more than its own area.");
                     }
                     Px.Fill(fb, rc.X + x, rc.Y + y, w, h, colour);
                 }

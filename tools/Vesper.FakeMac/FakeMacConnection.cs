@@ -18,7 +18,8 @@ public sealed record FakeMacOptions(
     bool OfferDiffieHellman,
     bool Rfb38,
     bool Verbose,
-    bool RejectRsaLogins = false);
+    bool RejectRsaLogins = false,
+    bool Impersonate = false);
 
 /// <summary>
 /// The server side of one viewer connection, speaking Apple's RFB 003.889 the way the measured
@@ -82,6 +83,11 @@ public sealed class FakeMacConnection : IAsyncDisposable
         {
             byte[] wrapKey = await HandshakeAsync(linked.Token);
             if (_apple) await StartEncryptionAsync(wrapKey, linked.Token);
+            if (_options.Impersonate)
+            {
+                // Without the real session keys there's nothing more it can do but wait.
+                await Task.Delay(Timeout.Infinite, linked.Token);
+            }
             _desktop.Changed += OnChanged;
             _desktop.Resized += OnResized;
             _desktop.SetStatus($"Viewer connected ({(_apple ? "Apple 003.889, encrypted" : "RFB 3.8")})");
@@ -204,6 +210,14 @@ public sealed class FakeMacConnection : IAsyncDisposable
         byte[] credentials = blob[8..136];
         int rsaLength = BinaryPrimitives.ReadUInt16LittleEndian(blob.AsSpan(136));
         byte[] wrapped = blob[138..(138 + rsaLength)];
+        if (_options.Impersonate)
+        {
+            // Someone replaying the Mac's public key can't decrypt the wrapped key. All it can do
+            // is claim success and make up the session keys.
+            Log("impersonating: the Mac's public key without its private key");
+            await WriteClearAsync([0, 0, 0, 0], ct);
+            return (true, RandomNumberGenerator.GetBytes(16));
+        }
         byte[] aesKey = _options.Identity.Decrypt(wrapped, RSAEncryptionPadding.Pkcs1);
         await WriteClearAsync([0, 0, 0, 0], ct); // the counted acknowledgement, empty
         bool ok = CheckCredentials(aesKey, credentials);
@@ -309,6 +323,11 @@ public sealed class FakeMacConnection : IAsyncDisposable
                         _records = new RecordWriter(key, iv);
                         _input = new RecordReaderStream(_transport, key, iv, []);
                         Log("record layer up (AES-128-CBC + SHA-1)");
+                        if (_options.Impersonate)
+                        {
+                            // An impersonator would start talking at once, hoping to be believed.
+                            await SendAsync([2], ct);
+                        }
                         return;
                     }
                     break;
