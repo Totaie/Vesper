@@ -1,5 +1,7 @@
 # Builds the portable Vesper zips: self-contained Release builds that run from any folder, with no
 # install and no .NET or Windows App SDK needed. One zip per platform, in .\dist, with SHA-256 sums.
+# Each unzips to a folder holding just Vesper.exe (a small launcher), Start here.txt, and an app
+# folder with the program itself. The launcher needs Visual Studio's C++ build tools.
 param(
     [ValidateSet('x64', 'ARM64')] [string[]] $Platforms = @('x64', 'ARM64')
 )
@@ -14,7 +16,8 @@ $readme = @"
 Vesper $version - Apple Remote Desktop for Windows
 ==================================================
 
-Portable: nothing to install. Unzip this folder anywhere and run Vesper.exe.
+Portable: nothing to install. Extract this whole folder anywhere and run Vesper.exe.
+The "app" folder beside it is the program itself, so keep the two together.
 
 Requirements: Windows 10 version 2004 or later, or Windows 11. Pick the zip for your PC:
 win-x64 for Intel and AMD processors, win-arm64 for Snapdragon / ARM PCs.
@@ -35,8 +38,13 @@ Your Macs and settings are kept in %LOCALAPPDATA%\Vesper on this PC, and saved p
 encrypted to your Windows account. To remove everything, delete Vesper's folder and that one.
 
 Vesper talks only to the Macs you add: no accounts, no telemetry, no update checks.
-Licences for code Vesper ports are in THIRD-PARTY-NOTICES.md.
+Licences for code Vesper ports are in app\THIRD-PARTY-NOTICES.md.
 "@
+
+# One launcher serves every platform: it's 32-bit x86, which ARM PCs run under emulation.
+$launcher = Join-Path $root 'obj\launcher'
+& (Join-Path $root 'tools\Launcher\build.cmd') $launcher ($version -replace '-.*$')
+if ($LASTEXITCODE -ne 0) { throw "launcher build failed ($LASTEXITCODE)" }
 
 $sums = @()
 foreach ($platform in $Platforms) {
@@ -47,9 +55,11 @@ foreach ($platform in $Platforms) {
     $name = "Vesper-$version-$rid"
     $stage = Join-Path $dist $name
     if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
-    Copy-Item (Join-Path $root "publish\$rid") $stage -Recurse
+    New-Item -ItemType Directory $stage | Out-Null
+    Copy-Item (Join-Path $root "publish\$rid") (Join-Path $stage 'app') -Recurse
     # Debug symbols aren't needed to run it.
     Get-ChildItem $stage -Recurse -Filter *.pdb | Remove-Item -Force
+    Copy-Item (Join-Path $launcher 'Vesper.exe') $stage
     Set-Content -Path (Join-Path $stage 'Start here.txt') -Value $readme -Encoding utf8
 
     $zip = Join-Path $dist "$name.zip"

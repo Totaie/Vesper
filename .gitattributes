@@ -7,3 +7,5 @@
 *.ps1 text eol=crlf
 *.png binary
 *.ico binary
+*.cmd text eol=crlf
+*.rc text eol=crlf

@@ -40,4 +40,20 @@
     <None Include="..\..\THIRD-PARTY-NOTICES.md" Link="THIRD-PARTY-NOTICES.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!--
+    Only what Vesper runs on is published. Its interface is English, so the Windows UI library's
+    86 other languages stay out (English is also what that library falls back to). The runtime's
+    debugger and crash-dump helpers stay out too: Vesper turns crash dumps off, since a dump would
+    hold screen contents and session keys.
+  -->
+  <Target Name="VesperTrimPublishedFiles" BeforeTargets="_ComputeResolvedFilesToPublishTypes">
+    <ItemGroup>
+      <_VesperUnneeded Include="@(ResolvedFileToPublish)"
+                       Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('%(ResolvedFileToPublish.RelativePath)', '(?i)^(?!en-us[\\/]|en-gb[\\/])[a-z]{2,3}(-[a-z0-9]+)*[\\/][^\\/]+\.mui$'))" />
+      <_VesperUnneeded Include="@(ResolvedFileToPublish)"
+                       Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('%(ResolvedFileToPublish.Filename)%(ResolvedFileToPublish.Extension)', '(?i)^(createdump\.exe|mscordbi\.dll|mscordaccore.*\.dll|Microsoft\.DiaSymReader\.Native\..*\.dll)$'))" />
+      <ResolvedFileToPublish Remove="@(_VesperUnneeded)" />
+    </ItemGroup>
+  </Target>
+
 </Project>

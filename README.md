@@ -104,8 +104,9 @@ it. From then on it's silent unless the key changes.
 
 ## Running it without installing
 
-Each [release](../../releases) has portable zips: unzip anywhere and run `Vesper.exe`. Nothing is
-installed, and no .NET or Windows App SDK is needed. Take `win-x64` for Intel and AMD PCs and
+Each [release](../../releases) has portable zips: extract the folder anywhere and run the
+`Vesper.exe` at its top (the `app` folder beside it holds the program). Nothing is installed, and
+no .NET or Windows App SDK is needed. Take `win-x64` for Intel and AMD PCs and
 `win-arm64` for Snapdragon/ARM ones. The builds aren't code-signed, so the first launch may show
 "Windows protected your PC": choose **More info › Run anyway**. Macs and settings are kept in
 `%LOCALAPPDATA%\Vesper`; delete that folder and the app's to remove everything.
@@ -113,7 +114,8 @@ installed, and no .NET or Windows App SDK is needed. Take `win-x64` for Intel an
 ## Building
 
 Requirements: Windows 10 2004+ (Windows 11 recommended), .NET SDK 10.0.1xx, and Visual
-Studio 2022 17.14 or newer (only for its MSBuild components; `dotnet build` works too).
+Studio 2022 17.14 or newer (only for its MSBuild components; `dotnet build` works too). The
+portable zips' launcher also needs Visual Studio's C++ build tools.
 
 ```powershell
 dotnet build Vesper.slnx -p:Platform=x64

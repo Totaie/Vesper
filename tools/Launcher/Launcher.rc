@@ -1,0 +1,31 @@
+#include <winver.h>
+#include <winuser.h>
+// Written by build.cmd: VESPER_VERSION_STRING and VESPER_VERSION_NUMBERS.
+#include "version.h"
+
+1 ICON "..\\..\\src\\Vesper.App\\Assets\\Vesper.ico"
+CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "Launcher.manifest"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION VESPER_VERSION_NUMBERS
+PRODUCTVERSION VESPER_VERSION_NUMBERS
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "FileDescription", "Vesper"
+            VALUE "ProductName", "Vesper"
+            VALUE "FileVersion", VESPER_VERSION_STRING
+            VALUE "ProductVersion", VESPER_VERSION_STRING
+            VALUE "OriginalFilename", "Vesper.exe"
+            VALUE "LegalCopyright", "Totaie"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
