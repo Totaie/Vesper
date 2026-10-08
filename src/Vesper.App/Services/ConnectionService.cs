@@ -56,7 +56,7 @@ internal sealed class ConnectedMac(RfbSession session, SshTunnel? tunnel, Socket
 internal sealed class ConnectionService(AppData data, SecretVault vault)
 {
     public async Task<ConnectedMac> ConnectAsync(
-        MacProfile profile, string password, double pcPixelsPerDip, ITrustPrompts prompts,
+        MacProfile profile, string password, (int Width, int Height) displayPixels, ITrustPrompts prompts,
         IProgress<ConnectStage> progress, CancellationToken ct)
     {
         // Pins are saved from network threads; they're applied where the profile lives.
@@ -85,7 +85,7 @@ internal sealed class ConnectionService(AppData data, SecretVault vault)
             RfbSession session;
             try
             {
-                session = await StartSessionAsync(profile, password, pcPixelsPerDip, prompts, progress, stream, path, policy, policy.Auth, ui, ct);
+                session = await StartSessionAsync(profile, password, displayPixels, prompts, progress, stream, path, policy, policy.Auth, ui, ct);
             }
             catch (AuthenticationFailedException e) when (e.CredentialsRejected && e.Method == SignInMethod.AppleRsa && e.DiffieHellmanOffered && policy.RetryWithDiffieHellman)
             {
@@ -93,7 +93,7 @@ internal sealed class ConnectionService(AppData data, SecretVault vault)
                 // sign-in is allowed anyway, try it once with the same password.
                 Diagnostics.Add($"RSA sign-in to {profile.Host} was refused; trying Apple's older sign-in once.");
                 (stream, socket, path) = await OpenTransportAsync(profile, tunnel, ct);
-                session = await StartSessionAsync(profile, password, pcPixelsPerDip, prompts, progress, stream, path, policy,
+                session = await StartSessionAsync(profile, password, displayPixels, prompts, progress, stream, path, policy,
                     new AuthPolicy(AllowRsa: false, AllowDiffieHellman: true), ui, ct);
                 if (policy.RememberRsaRefusal)
                 {
@@ -128,7 +128,7 @@ internal sealed class ConnectionService(AppData data, SecretVault vault)
     }
 
     private async Task<RfbSession> StartSessionAsync(
-        MacProfile profile, string password, double pcPixelsPerDip, ITrustPrompts prompts, IProgress<ConnectStage> progress,
+        MacProfile profile, string password, (int Width, int Height) displayPixels, ITrustPrompts prompts, IProgress<ConnectStage> progress,
         Stream stream, NetworkPath path, SignInPolicy policy, AuthPolicy auth, SynchronizationContext? ui, CancellationToken ct)
     {
         progress.Report(ConnectStage.VerifyingIdentity);
@@ -143,7 +143,7 @@ internal sealed class ConnectionService(AppData data, SecretVault vault)
             ClipboardFromMac = profile.ShareClipboard,
             Color = profile.Quality,
             Codec = ChooseCodec(profile, path),
-            MatchPixelsPerPoint = profile.Resolution == ResolutionMode.MatchThisDisplay ? pcPixelsPerDip : null,
+            FitPixels = profile.Resolution == ResolutionMode.MatchThisDisplay ? displayPixels : null,
             StageChanged = stage => progress.Report(stage switch
             {
                 SessionStage.SigningIn => ConnectStage.SigningIn,

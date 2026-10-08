@@ -52,6 +52,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
     private bool _promptedThisAttempt;
     private bool _sizedToMac;
     private string _loggedCodec = "";
+    private (int Width, int Height) _fitTarget;
 
     internal static void Open(MacProfile profile, string? password)
     {
@@ -79,8 +80,9 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         StepsList.ItemsSource = _steps;
         ApplyTheme();
 
-        _renderer = new SessionRenderer(Surface.Panel);
+        _renderer = new SessionRenderer(Surface);
         _renderer.SetScaling(profile.Scaling);
+        AppWindow.Changed += OnWindowChanged;
         _keys.Layout = profile.Modifiers;
         _hook.Handler = OnHookKey;
 
@@ -88,7 +90,6 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         ClipboardToggle.IsChecked = profile.ShareClipboard;
 
         Surface.SizeChanged += (_, _) => UpdateView();
-        Surface.Panel.CompositionScaleChanged += (_, _) => UpdateView();
         Surface.GotFocus += (_, _) => { _surfaceFocused = true; UpdateHook(); };
         Surface.LostFocus += (_, _) => { _surfaceFocused = false; ReleaseKeys(); UpdateHook(); };
         Surface.PointerMoved += OnPointer;
@@ -107,6 +108,8 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
 
         Root.Loaded += async (_, _) =>
         {
+            // A move to a monitor with another scale changes the rasterization scale.
+            Root.XamlRoot.Changed += (_, _) => UpdateView();
             UpdateView();
             await ConnectAsync();
         };
@@ -162,7 +165,8 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         var progress = new Progress<ConnectStage>(SetStage);
         try
         {
-            var connection = await App.Current.Connections.ConnectAsync(_profile, password, _rasterScale, this, progress, _cts.Token);
+            _fitTarget = DisplayPixels();
+            var connection = await App.Current.Connections.ConnectAsync(_profile, password, _fitTarget, this, progress, _cts.Token);
             if (_closing)
             {
                 // The window closed while the last step finished: don't leave a session running.
@@ -718,7 +722,25 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
     {
         var mode = (string)((FrameworkElement)sender).Tag == "Native" ? ResolutionMode.Native : ResolutionMode.MatchThisDisplay;
         Remember(p => p.Resolution = mode);
-        _connection?.Session.MatchPixelsPerPoint(mode == ResolutionMode.MatchThisDisplay ? _rasterScale : null);
+        _fitTarget = DisplayPixels();
+        _connection?.Session.FitToPixels(mode == ResolutionMode.MatchThisDisplay ? _fitTarget : null);
+    }
+
+    /// <summary>The physical pixels of the monitor the window is on: what "match this display" fills.</summary>
+    private (int Width, int Height) DisplayPixels()
+    {
+        var bounds = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Nearest).OuterBounds;
+        return (Math.Max(1, bounds.Width), Math.Max(1, bounds.Height));
+    }
+
+    /// <summary>A window dragged to a monitor of another size asks the Mac for a picture to fit it.</summary>
+    private void OnWindowChanged(AppWindow sender, AppWindowChangedEventArgs args)
+    {
+        if (!args.DidPositionChange && !args.DidSizeChange) return;
+        var pixels = DisplayPixels();
+        if (pixels == _fitTarget) return;
+        _fitTarget = pixels;
+        if (_profile.Resolution == ResolutionMode.MatchThisDisplay) _connection?.Session.FitToPixels(pixels);
     }
 
     private void Color_Click(object sender, RoutedEventArgs e)

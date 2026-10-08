@@ -1,32 +1,34 @@
 using System.Runtime.InteropServices.WindowsRuntime;
 using Microsoft.Graphics.Canvas;
-using Microsoft.Graphics.Canvas.UI.Xaml;
-using Microsoft.UI;
-using Microsoft.UI.Dispatching;
+using Microsoft.Graphics.Canvas.UI.Composition;
+using Microsoft.UI.Composition;
 using Vesper.Core.Rfb;
 using Vesper.Models;
+using Vesper.Views;
 using Windows.Foundation;
 using Windows.Graphics.DirectX;
 
 namespace Vesper.Rendering;
 
 /// <summary>
-/// Draws the Mac's framebuffer into a swap chain on its own thread. Only the rectangles the Mac
-/// changed are uploaded to the GPU; scaling to the window happens on the GPU (high-quality cubic
-/// when shrinking, exact pixels at 1:1), and frames are presented on vsync only when something
-/// changed, so an idle session costs nothing.
+/// Draws the Mac's framebuffer into a composition surface on its own thread. Only the rectangles
+/// the Mac changed are uploaded to the GPU; scaling to the window happens on the GPU (high-quality
+/// cubic when shrinking, exact pixels at 1:1), and the picture is redrawn only when something
+/// changed, so an idle session costs nothing. Windows composes the surface with the rest of the
+/// window (see <see cref="SessionSurface"/> for why it isn't a swap chain).
 /// </summary>
 internal sealed class SessionRenderer : IDisposable
 {
-    private readonly CanvasSwapChainPanel _panel;
-    private readonly DispatcherQueue _ui;
+    private static readonly Windows.UI.Color Background = Windows.UI.Color.FromArgb(255, 12, 12, 16);
+    private readonly CompositionGraphicsDevice _graphics;
+    private readonly CompositionDrawingSurface _surface;
     private readonly AutoResetEvent _wake = new(false);
     private readonly Thread _thread;
     private readonly List<PixelRect> _dirty = [];
     private readonly object _viewLock = new();
     private volatile bool _running = true;
     private CanvasDevice _device;
-    private CanvasSwapChain? _swapChain;
+    private int _surfaceWidth, _surfaceHeight;
     private CanvasBitmap? _bitmap;
     private int _bitmapGeneration = -1;
     private Framebuffer? _bitmapSource;
@@ -40,11 +42,19 @@ internal sealed class SessionRenderer : IDisposable
     private ViewScaling _scaling = ViewScaling.Fit;
     private Point _pan;
 
-    public SessionRenderer(CanvasSwapChainPanel panel)
+    public SessionRenderer(SessionSurface view)
     {
-        _panel = panel;
-        _ui = DispatcherQueue.GetForCurrentThread();
         _device = CanvasDevice.GetSharedDevice();
+        var compositor = view.Visual.Compositor;
+        _graphics = CanvasComposition.CreateCompositionGraphicsDevice(compositor, _device);
+        _graphics.RenderingDeviceReplaced += (_, _) => { _redraw = true; _wake.Set(); };
+        _surface = _graphics.CreateDrawingSurface(new Size(1, 1),
+            Microsoft.Graphics.DirectX.DirectXPixelFormat.B8G8R8A8UIntNormalized, Microsoft.Graphics.DirectX.DirectXAlphaMode.Premultiplied);
+        var brush = compositor.CreateSurfaceBrush(_surface);
+        // The surface is drawn at the view's exact physical size, so it's shown pixel for pixel.
+        brush.Stretch = CompositionStretch.Fill;
+        brush.BitmapInterpolationMode = CompositionBitmapInterpolationMode.NearestNeighbor;
+        view.Visual.Brush = brush;
         _thread = new Thread(RenderLoop) { IsBackground = true, Name = "Vesper renderer", Priority = ThreadPriority.AboveNormal };
         _thread.Start();
     }
@@ -174,39 +184,38 @@ internal sealed class SessionRenderer : IDisposable
         }
         if (viewW <= 1 || viewH <= 1) return false;
 
-        float dpi = (float)(96 * rasterScale);
-        if (_swapChain is null)
+        int width = Math.Max(1, (int)Math.Round(viewW * rasterScale));
+        int height = Math.Max(1, (int)Math.Round(viewH * rasterScale));
+        if (width != _surfaceWidth || height != _surfaceHeight)
         {
-            _swapChain = new CanvasSwapChain(_device, (float)viewW, (float)viewH, dpi, DirectXPixelFormat.B8G8R8A8UIntNormalized, 2, CanvasAlphaMode.Ignore);
-            var chain = _swapChain;
-            _ui.TryEnqueue(() => _panel.SwapChain = chain);
+            CanvasComposition.Resize(_surface, new Size(width, height));
+            _surfaceWidth = width;
+            _surfaceHeight = height;
             _redraw = true;
         }
-        else if (viewChanged)
-        {
-            _swapChain.ResizeBuffers((float)viewW, (float)viewH, dpi);
-            _redraw = true;
-        }
+        if (viewChanged) _redraw = true;
 
         var fb = _framebuffer;
         bool uploaded = fb is not null && Upload(fb);
         if (!uploaded && !_redraw) return false;
         _redraw = false;
 
-        using (var ds = _swapChain.CreateDrawingSession(Windows.UI.Color.FromArgb(255, 12, 12, 16)))
+        // Drawn in physical pixels (the surface's own units).
+        using (var ds = CanvasComposition.CreateDrawingSession(_surface))
         {
+            ds.Clear(Background);
             if (_bitmap is not null && fb is not null)
             {
                 var src = _bitmap.SizeInPixels;
-                var dest = Placement(viewW, viewH, rasterScale, (int)src.Width, (int)src.Height, scaling, pan);
-                double physicalScale = dest.Width * rasterScale / src.Width;
+                var place = Placement(viewW, viewH, rasterScale, (int)src.Width, (int)src.Height, scaling, pan);
+                var dest = new Rect(place.X * rasterScale, place.Y * rasterScale, place.Width * rasterScale, place.Height * rasterScale);
+                double physicalScale = dest.Width / src.Width;
                 var interpolation = Math.Abs(physicalScale - 1) < 0.001 ? CanvasImageInterpolation.NearestNeighbor
                     : physicalScale < 1 ? CanvasImageInterpolation.HighQualityCubic
                     : CanvasImageInterpolation.Linear;
                 ds.DrawImage(_bitmap, dest, new Rect(0, 0, src.Width, src.Height), 1.0f, interpolation);
             }
         }
-        _swapChain.Present(1);
         return true;
     }
 
@@ -266,9 +275,8 @@ internal sealed class SessionRenderer : IDisposable
         _bitmap = null;
         _bitmapGeneration = -1;
         _bitmapSource = null;
-        _swapChain?.Dispose();
-        _swapChain = null;
         _device = CanvasDevice.GetSharedDevice();
+        CanvasComposition.SetCanvasDevice(_graphics, _device);
         _framebuffer?.InvalidateAll();
         _redraw = true;
     }
@@ -280,7 +288,8 @@ internal sealed class SessionRenderer : IDisposable
         if (_framebuffer is not null) _framebuffer.Changed -= OnFramebufferChanged;
         _thread.Join(1000);
         _bitmap?.Dispose();
-        _swapChain?.Dispose();
+        _surface.Dispose();
+        _graphics.Dispose();
         _wake.Dispose();
     }
 }

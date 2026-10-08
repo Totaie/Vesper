@@ -60,7 +60,7 @@
             <Expander Header="Display and input" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                 <StackPanel Spacing="14">
                     <ComboBox x:Name="ResolutionBox" Header="Resolution" HorizontalAlignment="Stretch">
-                        <ComboBoxItem Content="Match this display — the Mac scales Retina down first (fastest)" />
+                        <ComboBoxItem Content="Match this display — sharp full screen, the Mac does the scaling (recommended)" />
                         <ComboBoxItem Content="Every native pixel (sharpest, most bandwidth)" />
                     </ComboBox>
                     <ComboBox x:Name="ColorBox" Header="Picture" HorizontalAlignment="Stretch">

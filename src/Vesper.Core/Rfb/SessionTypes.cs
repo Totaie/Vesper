@@ -84,12 +84,12 @@ public sealed class RfbSessionOptions
     public double? ServerScale { get; init; }
 
     /// <summary>
-    /// When set, the Mac scales its screen so one of its points becomes this many framebuffer
-    /// pixels (pass this PC's pixels per DIP): a 5K Retina screen viewed from a 100% display
-    /// arrives as 2560×1440, a quarter of the pixels. Decided once the Mac reports its displays.
-    /// Takes precedence over <see cref="ServerScale"/>.
+    /// When set, the Mac scales its screen so the whole of it just fits this many pixels (pass the
+    /// PC display's size): a 5K Retina screen shown on a 1080p monitor arrives as 1920×1080, a
+    /// sixth of its native pixels, and full screen is exactly one pixel per pixel. Decided once
+    /// the Mac reports its displays. Takes precedence over <see cref="ServerScale"/>.
     /// </summary>
-    public double? MatchPixelsPerPoint { get; init; }
+    public (int Width, int Height)? FitPixels { get; init; }
 
     /// <summary>Shortest gap between screen updates the Mac pushes unasked. 16,667 µs is 60 per second.</summary>
     public uint PushIntervalMicroseconds { get; init; } = 16_667;

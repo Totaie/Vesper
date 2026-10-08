@@ -23,10 +23,10 @@ Apple's own viewer (and Remote Desktop Manager's ARD mode) use:
 |---|---|---|
 | Screen updates | Polled; a Mac answers incremental requests late (2–9 updates/s while scrolling) | **Pushed** by the Mac as the screen changes (`AutoFrameBufferUpdate`), paced so input never queues behind pictures |
 | The picture | Raw pixels through zlib: megabytes per frame, which is what makes macOS VNC crawl on a Retina screen | Apple's **adaptive codec** (MVS), as Apple's viewer and Remote Desktop Manager use: JPEG-like 8×8 tiles, copies and a tile cache, arriving coarse and sharpening in a moment. A full 2560×1440 frame is a few hundred KB, decoded on every core |
-| Retina displays | Every native pixel: a 5K Studio Display is 14.7 million pixels per frame | The Mac **scales on its side** to your PC's pixel density first; a 5K screen viewed from a 100% display arrives as 2560×1440, a quarter of the data |
+| Retina displays | Every native pixel: a 5K Studio Display is 14.7 million pixels per frame | The Mac **scales on its side** to fit your monitor's pixels: a 5K screen shown on a 1080p monitor arrives as 1920×1080, and full screen is exactly one pixel per pixel, so nothing is resampled |
 | Mouse pointer | Drawn into the picture, so it moves at the network's pace | The Mac sends its pointer images; Vesper makes them **real Windows hardware cursors** that move at your mouse's own rate |
 | Scrolling | Wheel "clicks" the Mac turns into ~2 px nudges | Apple's **precise scroll** message: smooth, trackpad-like, both axes |
-| Drawing | CPU blits | GPU (Win2D/Direct2D) on its own thread; only changed rectangles are uploaded; vsync |
+| Drawing | CPU blits | GPU (Win2D/Direct2D) on its own thread; only changed rectangles are uploaded; composed by Windows like any window, so variable-refresh monitors don't flicker |
 | Network | Nagle on | TCP_NODELAY, coalesced pointer moves, large receive buffers |
 
 ## Security

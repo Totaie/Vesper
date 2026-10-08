@@ -218,6 +218,26 @@ public sealed class SessionTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Matching_a_display_fills_its_pixels_exactly()
+    {
+        // FakeMac's screen is 800×500 points at 2x: 1600×1000 native pixels.
+        int port = StartServer();
+        await using var session = await ConnectAsync(port, new RfbSessionOptions
+        {
+            Username = "vesper", Password = "evening-star", IdentityVerifier = new Pin(_ => true), FitPixels = (1000, 1000),
+        });
+        _ = session.RunAsync(_cts.Token);
+        await WaitForAsync(() => session.Framebuffer.Width == 1000 && session.Framebuffer.Height == 625);
+
+        // A move to a 1920×1080 display: limited by height, never above native.
+        session.FitToPixels((1920, 1080));
+        await WaitForAsync(() => session.Framebuffer.Width == 1600 && session.Framebuffer.Height == 1000);
+        session.FitToPixels((1280, 720));
+        await WaitForAsync(() => session.Framebuffer.Width == 1152 && session.Framebuffer.Height == 720);
+        await WaitForAsync(() => FramebufferMatchesDesktop(session));
+    }
+
+    [Fact]
     public async Task Plain_rfb_38_servers_work_only_when_the_transport_encrypts()
     {
         int port = StartServer(offerRsa: false, rfb38: true);

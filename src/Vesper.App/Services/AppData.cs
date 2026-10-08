@@ -14,6 +14,10 @@ internal sealed class AppData
     public AppData()
     {
         Directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Vesper");
+#if DEBUG
+        // Development builds can keep their Macs and passwords apart from the installed app's.
+        if (Environment.GetEnvironmentVariable("VESPER_DEV_DATA") is { Length: > 0 } dev) Directory = dev;
+#endif
         System.IO.Directory.CreateDirectory(Directory);
         Profiles = Load(ProfilesPath, VesperJson.Default.ListMacProfile) ?? [];
         Settings = Load(SettingsPath, VesperJson.Default.AppSettings) ?? new AppSettings();

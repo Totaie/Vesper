@@ -17,7 +17,7 @@ public enum CodecPreference { Auto, Zlib, Zrle }
 /// <summary>How the Mac sizes the screen it sends.</summary>
 public enum ResolutionMode
 {
-    /// <summary>The Mac scales its Retina screen to this PC's pixel density before sending.</summary>
+    /// <summary>The Mac scales its screen to fit this PC's monitor, pixel for pixel, before sending.</summary>
     MatchThisDisplay,
 
     /// <summary>Every native pixel (e.g. full 5K). Sharpest, heaviest.</summary>

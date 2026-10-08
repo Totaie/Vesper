@@ -49,7 +49,7 @@ public sealed class RfbSession : IAsyncDisposable
     private double _scrollResidualX, _scrollResidualY;
     private uint _pasteboardRequest;
     private Deadline? _deadline;
-    private double? _matchPixelsPerPoint;
+    private (int Width, int Height)? _fitPixels;
     private ColorQuality _color;
     private volatile bool _clipboardFromMac;
     private double _requestedScale = 1.0;
@@ -71,7 +71,7 @@ public sealed class RfbSession : IAsyncDisposable
         _transport = transport;
         _options = options;
         _reader = new RfbReader(transport);
-        _matchPixelsPerPoint = options.MatchPixelsPerPoint;
+        _fitPixels = options.FitPixels;
         _color = options.Color;
         _clipboardFromMac = options.ClipboardFromMac;
         Framebuffer = new Framebuffer(1, 1);
@@ -431,7 +431,7 @@ public sealed class RfbSession : IAsyncDisposable
 
         output.Enqueue(SetPixelFormatMessage(PixelFormat.Bgrx32));
         output.Enqueue(EncodingsMessage());
-        if (_apple && _matchPixelsPerPoint is null && _options.ServerScale is double scale && scale > 0 && scale < 1)
+        if (_apple && _fitPixels is null && _options.ServerScale is double scale && scale > 0 && scale < 1)
         {
             _requestedScale = scale;
             output.Enqueue(AppleMessages.SetServerScalingMessage(scale));
@@ -757,11 +757,14 @@ public sealed class RfbSession : IAsyncDisposable
     /// <summary>True while a requested server scale hasn't yet been confirmed by a layout.</summary>
     public bool ScalePending => _apple && Layout is { } l && Math.Abs(l.ServerScale - _requestedScale) > 0.01;
 
-    /// <summary>Changes the density the Mac should match (e.g. after the window moved to another monitor).</summary>
-    public void MatchPixelsPerPoint(double? pixelsPerPoint)
+    /// <summary>
+    /// Changes the pixels the Mac's screen should fit (after the window moved to another
+    /// monitor), or null for every native pixel.
+    /// </summary>
+    public void FitToPixels((int Width, int Height)? target)
     {
-        _matchPixelsPerPoint = pixelsPerPoint;
-        if (pixelsPerPoint is null && _apple && _requestedScale != 1.0)
+        _fitPixels = target;
+        if (target is null && _apple && _requestedScale != 1.0)
         {
             _requestedScale = 1.0;
             _out?.Enqueue(AppleMessages.SetServerScalingMessage(1.0));
@@ -770,20 +773,24 @@ public sealed class RfbSession : IAsyncDisposable
         RequestMatchingScale();
     }
 
+    /// <summary>
+    /// Asks the Mac to render its screen (all of it, or the display selected) just large enough
+    /// to fill the target pixels, and never above its native pixels. Full screen on that display
+    /// is then exactly one framebuffer pixel per screen pixel: no resampling, so no blur.
+    /// </summary>
     private void RequestMatchingScale()
     {
-        if (!_apple || _out is null || Layout is not { } layout || _matchPixelsPerPoint is not double target) return;
-        // A combined view of screens at different densities can't be scaled as one; Apple's viewer
-        // takes it at native size too.
-        bool mixed = layout.CurrentDisplay is null && layout.Displays.Select(d => d.Density).Distinct().Count() > 1;
-        double wanted = mixed ? 1.0 : Math.Clamp(target / layout.NativeDensity, 0.1, 1.0);
-        wanted = Math.Round(wanted, 3);
-        if (Math.Abs(wanted - layout.ServerScale) < 0.01)
+        if (!_apple || _out is null || Layout is not { } layout || _fitPixels is not (int targetW, int targetH)) return;
+        if (layout.ServerScale <= 0 || layout.FramebufferWidth <= 0 || layout.FramebufferHeight <= 0) return;
+        double nativeW = layout.FramebufferWidth / layout.ServerScale, nativeH = layout.FramebufferHeight / layout.ServerScale;
+        // A hair over the exact ratio, so the Mac's rounding can't land a pixel short of the target.
+        double wanted = Math.Clamp(Math.Min(targetW / nativeW, targetH / nativeH) + 1e-6, 0.1, 1.0);
+        if (Math.Abs(wanted - layout.ServerScale) * Math.Max(nativeW, nativeH) < 0.75)
         {
-            _requestedScale = layout.ServerScale; // already there
+            _requestedScale = layout.ServerScale; // already there, to the pixel
             return;
         }
-        if (Math.Abs(wanted - _requestedScale) < 0.001) return; // asked already; never loop on what the Mac granted
+        if (Math.Abs(wanted - _requestedScale) < 1e-6) return; // asked already; never loop on what the Mac granted
         _requestedScale = wanted;
         _out.Enqueue(AppleMessages.SetServerScalingMessage(wanted));
     }

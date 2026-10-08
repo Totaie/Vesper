@@ -95,9 +95,12 @@ bodies as a stream. Vesper frames each client message as its own record(s).
   layout, and one incremental request is always kept outstanding, since a still screen gets
   nothing unrequested.
 - **`SetServerScaling`** (0x08): `08 00 | f64 factor`, with the factor in (0, 1]. The Mac
-  renders at that factor before encoding. Vesper asks for `PC pixels per DIP ÷ Mac density`,
-  decided once the layout reports the density. Pointer positions stay in **unscaled** pixels,
-  so Vesper divides by the factor in force.
+  renders at that factor before encoding. Vesper asks for the factor at which the Mac's native
+  screen just fits the PC monitor the window is on (never above 1), plus a millionth so the
+  Mac's rounding can't fall a pixel short: full screen is then exactly one framebuffer pixel
+  per screen pixel. It's decided once the layout reports the native size, and asked again when
+  the window moves to a monitor of another size. Pointer positions stay in **unscaled**
+  pixels, so Vesper divides by the factor in force.
 - **Encodings**: the Mac encodes with the first of zlib (6), ZRLE (16) and its own codecs in the
   list. Vesper's default, Adaptive, lists Apple's adaptive codec (`0x3f3`) and `0x3ea` first,
   as Apple's viewer does in Adaptive quality. Full quality lists zlib first on the local network
