@@ -112,6 +112,11 @@ internal sealed class MvsDecoder
     private long _cacheInsertions;
 
     internal ReadOnlySpan<ushort> LuminanceQuantization => _luminanceQuantization;
+
+    /// <summary>Counts for the diagnostic log: whether the Mac sharpens what it sends, and how finely.</summary>
+    public long BasePasses { get; private set; }
+    public long Refinements { get; private set; }
+    public long QuantizationUpdates { get; private set; }
     internal ReadOnlySpan<ushort> ChrominanceQuantization => _chrominanceQuantization;
 
     /// <summary>Reads one 1011 rectangle (u32 length, body) and draws it.</summary>
@@ -135,14 +140,23 @@ internal sealed class MvsDecoder
         {
             case 2:
                 ReadQuantization(body);
+                QuantizationUpdates++;
                 return;
             case 0 or 1 when rc.IsEmpty:
                 throw new ProtocolException("An adaptive-codec picture came in an empty rectangle.");
             case 0 or 1:
                 EnsureTiles(fb);
                 _opCount = _dctCount = 0;
-                if (body[0] == 0) DecodeBasePass(body, fb, rc);
-                else DecodeRefinement(body, fb, rc);
+                if (body[0] == 0)
+                {
+                    DecodeBasePass(body, fb, rc);
+                    BasePasses++;
+                }
+                else
+                {
+                    DecodeRefinement(body, fb, rc);
+                    Refinements++;
+                }
                 Flush(fb);
                 lock (fb.Sync) fb.MarkDirty(rc.X, rc.Y, rc.Width, rc.Height);
                 return;

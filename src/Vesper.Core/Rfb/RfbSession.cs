@@ -664,6 +664,15 @@ public sealed class RfbSession : IAsyncDisposable
         }
     }
 
+    /// <summary>A line for the diagnostic log: the picture's size and codec, and how the adaptive codec behaved.</summary>
+    public string DescribePicture()
+    {
+        var mvs = _decode.Mvs;
+        string detail = mvs.BasePasses + mvs.Refinements == 0 ? ""
+            : $"; adaptive: {mvs.BasePasses} base passes, {mvs.Refinements} refinements, {mvs.QuantizationUpdates} table updates, luma q {string.Join('/', mvs.LuminanceQuantization[..4].ToArray())}";
+        return $"{Framebuffer.Width}×{Framebuffer.Height}, {(Stats.Codec.Length > 0 ? Stats.Codec : "no picture")}{detail}";
+    }
+
     private static string CodecName(int encoding) => encoding switch
     {
         AppleMessages.EncodingMvs => "MVS",

@@ -33,6 +33,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
     private readonly List<(uint Keysym, bool Down)> _keyBuffer = [];
     private readonly DispatcherTimer _statsTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly DispatcherTimer _floatingTimer = new() { Interval = TimeSpan.FromSeconds(2.5) };
+    private readonly DispatcherTimer _refitTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private readonly nint _hwnd;
     private readonly HashSet<uint> _keptFromWindows = [];
     private string? _password;
@@ -104,6 +105,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         Activated += OnActivated;
         Closed += OnClosed;
         _statsTimer.Tick += (_, _) => UpdateStats();
+        _refitTimer.Tick += (_, _) => Refit();
         _floatingTimer.Tick += (_, _) => { _floatingTimer.Stop(); if (_fullScreen) FloatingBar.Visibility = Visibility.Collapsed; };
 
         Root.Loaded += async (_, _) =>
@@ -165,7 +167,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         var progress = new Progress<ConnectStage>(SetStage);
         try
         {
-            _fitTarget = DisplayPixels();
+            _fitTarget = FitTarget();
             var connection = await App.Current.Connections.ConnectAsync(_profile, password, _fitTarget, this, progress, _cts.Token);
             if (_closing)
             {
@@ -310,6 +312,8 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
 
     private async Task TearDownAsync()
     {
+        _refitTimer.Stop();
+        if (_connection is { } ended) Diagnostics.Add($"Picture from {_profile.Host}: {ended.Session.DescribePicture()}");
         ReleaseKeys();
         _hook.Uninstall();
         _statsTimer.Stop();
@@ -624,6 +628,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         _rasterScale = Surface.XamlRoot?.RasterizationScale ?? 1.0;
         _renderer.SetView(Surface.ActualWidth, Surface.ActualHeight, _rasterScale);
         if (_cursorShape is not null) ApplyCursor(_cursorShape);
+        ScheduleRefit();
     }
 
     private void UpdateTitle()
@@ -716,31 +721,59 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         Remember(p => p.Scaling = scaling);
         _renderer.SetScaling(scaling);
         if (_cursorShape is not null) ApplyCursor(_cursorShape);
+        ScheduleRefit();
     }
 
     private void Resolution_Click(object sender, RoutedEventArgs e)
     {
         var mode = (string)((FrameworkElement)sender).Tag == "Native" ? ResolutionMode.Native : ResolutionMode.MatchThisDisplay;
         Remember(p => p.Resolution = mode);
-        _fitTarget = DisplayPixels();
+        _fitTarget = FitTarget();
         _connection?.Session.FitToPixels(mode == ResolutionMode.MatchThisDisplay ? _fitTarget : null);
     }
 
-    /// <summary>The physical pixels of the monitor the window is on: what "match this display" fills.</summary>
-    private (int Width, int Height) DisplayPixels()
+    /// <summary>
+    /// What "match this display" asks the Mac to fill, in physical pixels. Fitted to the window, it's
+    /// the picture area itself, so the picture is shown one pixel per pixel at any window size and
+    /// nothing is resampled (shrinking even 4% visibly softens text). At 1:1 it's the monitor, so
+    /// there's detail to pan around.
+    /// </summary>
+    private (int Width, int Height) FitTarget()
     {
-        var bounds = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Nearest).OuterBounds;
-        return (Math.Max(1, bounds.Width), Math.Max(1, bounds.Height));
+        if (_profile.Scaling == ViewScaling.ActualSize || Surface.ActualWidth < 1 || Surface.ActualHeight < 1)
+        {
+            var bounds = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Nearest).OuterBounds;
+            return (Math.Max(1, bounds.Width), Math.Max(1, bounds.Height));
+        }
+        // A window made tiny for a moment shouldn't make the Mac render a postage stamp.
+        return (Math.Max(320, (int)Math.Round(Surface.ActualWidth * _rasterScale)),
+            Math.Max(200, (int)Math.Round(Surface.ActualHeight * _rasterScale)));
     }
 
-    /// <summary>A window dragged to a monitor of another size asks the Mac for a picture to fit it.</summary>
+    /// <summary>
+    /// Asks the Mac for a picture of the new size once the window has settled: every new size
+    /// costs the Mac a fresh layout and a repaint, so a drag-resize asks once, at the end.
+    /// </summary>
+    private void ScheduleRefit()
+    {
+        _refitTimer.Stop();
+        _refitTimer.Start();
+    }
+
+    private void Refit()
+    {
+        _refitTimer.Stop();
+        if (_connection is not { } c || _profile.Resolution != ResolutionMode.MatchThisDisplay) return;
+        var target = FitTarget();
+        if (target == _fitTarget) return;
+        _fitTarget = target;
+        c.Session.FitToPixels(target);
+    }
+
+    /// <summary>A window dragged to a monitor of another size gets a picture fitted to it.</summary>
     private void OnWindowChanged(AppWindow sender, AppWindowChangedEventArgs args)
     {
-        if (!args.DidPositionChange && !args.DidSizeChange) return;
-        var pixels = DisplayPixels();
-        if (pixels == _fitTarget) return;
-        _fitTarget = pixels;
-        if (_profile.Resolution == ResolutionMode.MatchThisDisplay) _connection?.Session.FitToPixels(pixels);
+        if (args.DidPositionChange || args.DidSizeChange) ScheduleRefit();
     }
 
     private void Color_Click(object sender, RoutedEventArgs e)
