@@ -102,6 +102,14 @@ it. From then on it's silent unless the key changes.
   thousands of colours and greyscale, and between the Mac's displays. With connection stats on
   (Settings), the session shows its frame rate, bandwidth, latency and the codec in use.
 
+## Running it without installing
+
+Each [release](../../releases) has portable zips: unzip anywhere and run `Vesper.exe`. Nothing is
+installed, and no .NET or Windows App SDK is needed. Take `win-x64` for Intel and AMD PCs and
+`win-arm64` for Snapdragon/ARM ones. The builds aren't code-signed, so the first launch may show
+"Windows protected your PC": choose **More info › Run anyway**. Macs and settings are kept in
+`%LOCALAPPDATA%\Vesper`; delete that folder and the app's to remove everything.
+
 ## Building
 
 Requirements: Windows 10 2004+ (Windows 11 recommended), .NET SDK 10.0.1xx, and Visual
@@ -112,6 +120,7 @@ dotnet build Vesper.slnx -p:Platform=x64
 dotnet test tests\Vesper.Core.Tests
 .\scripts\publish.ps1            # self-contained Release build in .\publish\win-x64
 .\scripts\install.ps1            # copies it to %LOCALAPPDATA%\Programs\Vesper with a Start menu entry
+.\scripts\package.ps1            # portable zips for x64 and ARM64 in .\dist, with SHA-256 sums
 ```
 
 ## Testing without a Mac
