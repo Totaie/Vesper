@@ -37,7 +37,7 @@ public sealed partial class MacEditorDialog : ContentDialog
         SshPortBox.Value = _profile.SshPort;
         PortBox.Value = _profile.Port;
         ResolutionBox.SelectedIndex = (int)_profile.Resolution;
-        ColorBox.SelectedIndex = (int)_profile.Color;
+        ColorBox.SelectedIndex = (int)_profile.Quality;
         ModifierBox.SelectedIndex = (int)_profile.Modifiers;
         CodecBox.SelectedIndex = (int)_profile.Codec;
         ClipboardSwitch.IsOn = _profile.ShareClipboard;
@@ -64,7 +64,7 @@ public sealed partial class MacEditorDialog : ContentDialog
         _profile.SshPort = PortOrDefault(SshPortBox.Value, 22);
         _profile.Port = PortOrDefault(PortBox.Value, 5900);
         _profile.Resolution = (ResolutionMode)Math.Max(0, ResolutionBox.SelectedIndex);
-        _profile.Color = (ColorQuality)Math.Max(0, ColorBox.SelectedIndex);
+        _profile.Quality = (ColorQuality)Math.Max(0, ColorBox.SelectedIndex);
         _profile.Modifiers = (ModifierLayout)Math.Max(0, ModifierBox.SelectedIndex);
         _profile.Codec = (CodecPreference)Math.Max(0, CodecBox.SelectedIndex);
         _profile.ShareClipboard = ClipboardSwitch.IsOn;

@@ -58,6 +58,12 @@ public sealed class Desktop : IDisposable
     /// <summary>The current frame, B,G,R,x. Read under <see cref="Sync"/>.</summary>
     public byte[] Frame { get; private set; }
 
+    /// <summary>
+    /// What a correct viewer shows, when the codec in use is lossy (Apple's adaptive codec), as
+    /// the connection encoded it. Null while the picture is sent losslessly. Guarded by <see cref="Sync"/>.
+    /// </summary>
+    public byte[]? ViewerFrame { get; set; }
+
     public object Sync => _sync;
 
     /// <summary>Raised (outside the lock) with the changed rectangle, in framebuffer pixels.</summary>

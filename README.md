@@ -22,6 +22,7 @@ Apple's own viewer (and Remote Desktop Manager's ARD mode) use:
 | | Plain VNC | Vesper |
 |---|---|---|
 | Screen updates | Polled; a Mac answers incremental requests late (2–9 updates/s while scrolling) | **Pushed** by the Mac as the screen changes (`AutoFrameBufferUpdate`), paced so input never queues behind pictures |
+| The picture | Raw pixels through zlib: megabytes per frame, which is what makes macOS VNC crawl on a Retina screen | Apple's **adaptive codec** (MVS), as Apple's viewer and Remote Desktop Manager use: JPEG-like 8×8 tiles, copies and a tile cache, arriving coarse and sharpening in a moment. A full 2560×1440 frame is a few hundred KB, decoded on every core |
 | Retina displays | Every native pixel: a 5K Studio Display is 14.7 million pixels per frame | The Mac **scales on its side** to your PC's pixel density first; a 5K screen viewed from a 100% display arrives as 2560×1440, a quarter of the data |
 | Mouse pointer | Drawn into the picture, so it moves at the network's pace | The Mac sends its pointer images; Vesper makes them **real Windows hardware cursors** that move at your mouse's own rate |
 | Scrolling | Wheel "clicks" the Mac turns into ~2 px nudges | Apple's **precise scroll** message: smooth, trackpad-like, both axes |
@@ -97,8 +98,9 @@ it. From then on it's silent unless the key changes.
   Windows.
 - The **keyboard menu** sends Spotlight, Mission Control, Force Quit, Screenshot and Lock Screen.
 - The **display menu** switches between fitting the window and 1:1 pixels, between scaled and
-  native resolution, between full colour, thousands of colours and greyscale, and between the
-  Mac's displays.
+  native resolution, between Adaptive (Apple's fast codec, the default), lossless full colour,
+  thousands of colours and greyscale, and between the Mac's displays. With connection stats on
+  (Settings), the session shows its frame rate, bandwidth, latency and the codec in use.
 
 ## Building
 
@@ -142,7 +144,8 @@ docs/PROTOCOL.md    Apple's protocol as Vesper implements it, with sources
 ## Credits
 
 Apple doesn't document RFB 003.889. Vesper's implementation rests on others' careful
-reverse engineering, especially **remotex** (MIT, measurements of macOS 26), **noVNC** and its
+reverse engineering, especially **remotex** (MIT, measurements of macOS 26), **ard-rs** (MIT,
+whose adaptive-codec decoder Vesper ports; see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)), **noVNC** and its
 **noVNC-ARD** fork, and **libvncclient**. See [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
 ## The name

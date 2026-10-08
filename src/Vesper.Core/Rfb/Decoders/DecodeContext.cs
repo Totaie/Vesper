@@ -13,6 +13,7 @@ internal sealed class DecodeContext : IDisposable
     public ZlibInflater Zrle { get; } = new();
     public ZlibInflater Rgb555 { get; } = new();
     public ZlibInflater Gray4 { get; } = new();
+    public MvsDecoder Mvs { get; } = new();
 
     public byte[] Scratch(int size)
     {

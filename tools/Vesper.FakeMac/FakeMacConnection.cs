@@ -48,6 +48,8 @@ public sealed class FakeMacConnection : IAsyncDisposable
     private readonly string _peer;
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly Encoders _encoders = new();
+    private readonly MvsEncoder _mvs = new();
+    private byte[]? _mvsView;
     private readonly object _dirtyLock = new();
     private readonly List<Rectangle> _dirty = [];
     private readonly SemaphoreSlim _wake = new(0);
@@ -558,11 +560,11 @@ public sealed class FakeMacConnection : IAsyncDisposable
     }
 
     private int PickCodec() =>
-        _encodings.FirstOrDefault(e => e is 6 or 16 or 0x3ea or 0x3e9, 0);
+        _encodings.FirstOrDefault(e => e is 6 or 16 or 0x3ea or 0x3e9 or 0x3f3, 0);
 
     private static string CodecName(int codec) => codec switch
     {
-        6 => "zlib", 16 => "ZRLE", 0x3ea => "RGB 5-5-5 zlib", 0x3e9 => "4-bit grey zlib", _ => "Raw",
+        6 => "zlib", 16 => "ZRLE", 0x3ea => "RGB 5-5-5 zlib", 0x3e9 => "4-bit grey zlib", 0x3f3 => "adaptive (MVS)", _ => "Raw",
     };
 
     private List<byte[]> EncodeRects(List<Rectangle> rects)
@@ -578,6 +580,17 @@ public sealed class FakeMacConnection : IAsyncDisposable
             {
                 var r = Rectangle.Intersect(raw, bounds);
                 if (r.IsEmpty) continue;
+                if (codec == 0x3f3)
+                {
+                    // The adaptive codec works on the screen's 8-pixel grid.
+                    int left = r.X / 8 * 8, top = r.Y / 8 * 8;
+                    r = Rectangle.Intersect(Rectangle.FromLTRB(left, top, r.Right, r.Bottom), bounds);
+                    if (_mvsView is null || _mvsView.Length != fb.Length) _mvsView = new byte[fb.Length];
+                    result.Add(Rect(r.X, r.Y, r.Width, r.Height, codec, _mvs.Encode(fb, _desktop.Width, _desktop.Height, r, _mvsView)));
+                    _desktop.ViewerFrame = _mvsView;
+                    continue;
+                }
+                _desktop.ViewerFrame = null;
                 byte[] body = codec switch
                 {
                     6 => _encoders.Zlib(fb, stride, r.X, r.Y, r.Width, r.Height),

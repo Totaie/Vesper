@@ -62,7 +62,8 @@
                             <RadioMenuFlyoutItem x:Name="MatchItem" Text="Resolution: match this display" GroupName="resolution" Click="Resolution_Click" Tag="Match" />
                             <RadioMenuFlyoutItem x:Name="NativeItem" Text="Resolution: every native pixel" GroupName="resolution" Click="Resolution_Click" Tag="Native" />
                             <MenuFlyoutSeparator />
-                            <RadioMenuFlyoutItem x:Name="FullColorItem" Text="Full colour" GroupName="color" Click="Color_Click" Tag="Full" />
+                            <RadioMenuFlyoutItem x:Name="AdaptiveItem" Text="Adaptive (fastest)" GroupName="color" Click="Color_Click" Tag="Adaptive" />
+                            <RadioMenuFlyoutItem x:Name="FullColorItem" Text="Full colour, lossless" GroupName="color" Click="Color_Click" Tag="Full" />
                             <RadioMenuFlyoutItem x:Name="ThousandsItem" Text="Thousands of colours" GroupName="color" Click="Color_Click" Tag="Thousands" />
                             <RadioMenuFlyoutItem x:Name="GrayItem" Text="Greyscale" GroupName="color" Click="Color_Click" Tag="Grayscale" />
                             <MenuFlyoutSeparator x:Name="DisplaysSeparator" Visibility="Collapsed" />

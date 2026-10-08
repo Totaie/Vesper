@@ -30,6 +30,9 @@ internal static class AppleMessages
     public const int EncodingOneBitZlib = 0x3e8;
     public const int EncodingGrayZlib = 0x3e9;
     public const int EncodingRgb555Zlib = 0x3ea;
+
+    /// <summary>Apple's adaptive codec (MVS): 8×8 tiles, DCT-coded and refined progressively.</summary>
+    public const int EncodingMvs = 0x3f3;
     public const int EncodingCursorPos = 0x44c;
     public const int EncodingDisplayInfo = 0x44d;
     public const int EncodingUserInfo = 0x44e;

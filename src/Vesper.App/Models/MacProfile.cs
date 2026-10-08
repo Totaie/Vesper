@@ -57,7 +57,11 @@ public sealed class MacProfile
     /// </summary>
     public bool RsaSignInUnsupported { get; set; }
 
-    public ColorQuality Color { get; set; } = ColorQuality.Full;
+    /// <summary>
+    /// The picture's quality. Stored under a new name from the version that added Adaptive, so
+    /// Macs saved before it start on Adaptive too.
+    /// </summary>
+    public ColorQuality Quality { get; set; } = ColorQuality.Adaptive;
     public CodecPreference Codec { get; set; } = CodecPreference.Auto;
     public ResolutionMode Resolution { get; set; } = ResolutionMode.MatchThisDisplay;
     public ViewScaling Scaling { get; set; } = ViewScaling.Fit;

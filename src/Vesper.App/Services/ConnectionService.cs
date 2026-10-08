@@ -141,7 +141,7 @@ internal sealed class ConnectionService(AppData data, SecretVault vault)
             IdentityVerifier = new IdentityPin(profile, prompts, this, ui),
             ViewOnly = profile.ViewOnly,
             ClipboardFromMac = profile.ShareClipboard,
-            Color = profile.Color,
+            Color = profile.Quality,
             Codec = ChooseCodec(profile, path),
             MatchPixelsPerPoint = profile.Resolution == ResolutionMode.MatchThisDisplay ? pcPixelsPerDip : null,
             StageChanged = stage => progress.Report(stage switch

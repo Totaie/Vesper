@@ -2,6 +2,13 @@ namespace Vesper.Core.Rfb;
 
 public enum ColorQuality
 {
+    /// <summary>
+    /// Apple's adaptive codec (MVS): JPEG-like tiles that arrive coarse and sharpen within moments.
+    /// What Apple's viewer and Remote Desktop Manager use by default, and far lighter than
+    /// lossless pixels on a Retina screen.
+    /// </summary>
+    Adaptive,
+
     /// <summary>Lossless 24-bit colour.</summary>
     Full,
 
@@ -119,6 +126,9 @@ public enum PointerButtons : byte
 
 public sealed class SessionStats
 {
+    /// <summary>The codec the Mac's latest pictures came in ("MVS", "zlib", …), or empty before any.</summary>
+    public string Codec { get; internal set; } = "";
+
     public double UpdatesPerSecond { get; internal set; }
     public double MegabitsPerSecond { get; internal set; }
     public double DecodeMilliseconds { get; internal set; }

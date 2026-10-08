@@ -5,9 +5,9 @@ from, and how confident that source is. Every byte layout here is exercised by V
 against FakeMac. The type-30 maths is also checked against noVNC's published test vector.
 
 **Sources.** *remotex* (MIT; `docs/apple-vnc-889.md`, measured against macOS 26.5–26.6),
-*noVNC* and its *noVNC-ARD* fork (MPL-2.0), *libvncclient*, *ard-rs* (protocol facts only; no
-code was taken from it), and the IANA RFB registry. Where sources disagree, the choice and the
-reason are noted.
+*noVNC* and its *noVNC-ARD* fork (MPL-2.0), *libvncclient*, *ard-rs* (MIT OR Apache-2.0; the
+adaptive codec's decoder is ported from it, everything else is protocol facts only), and the
+IANA RFB registry. Where sources disagree, the choice and the reason are noted.
 
 ## Connecting
 
@@ -99,11 +99,29 @@ bodies as a stream. Vesper frames each client message as its own record(s).
   decided once the layout reports the density. Pointer positions stay in **unscaled** pixels,
   so Vesper divides by the factor in force.
 - **Encodings**: the Mac encodes with the first of zlib (6), ZRLE (16) and its own codecs in the
-  list. Vesper puts zlib first on the local network (Apple's Full quality does the same; it's
-  the least work for the Mac) and ZRLE first further away. Thousands of colours (`0x3ea`,
-  big-endian RGB 5-5-5 through its own deflate stream) and 4-bit greyscale (`0x3e9`) are
-  optional. Apple's DCT codec (`0x3f3`, "Adaptive") isn't implemented: its coefficient coding
-  isn't publicly documented.
+  list. Vesper's default, Adaptive, lists Apple's adaptive codec (`0x3f3`) and `0x3ea` first,
+  as Apple's viewer does in Adaptive quality. Full quality lists zlib first on the local network
+  (as Apple's Full quality does; it's the least work for the Mac) and ZRLE first further away.
+  Thousands of colours (`0x3ea`, big-endian RGB 5-5-5 through its own deflate stream) and 4-bit
+  greyscale (`0x3e9`) are optional.
+- **The adaptive codec** (`0x3f3`, 1011; Remote Desktop Manager calls it MVS, "Multi-Variant
+  Stream"), which is what makes a Retina screen feel live. A rectangle is a `u32` length and a
+  body whose first byte says what it is:
+  - **0, a base pass** over every 8×8 tile of the rectangle. A command stream from byte 6 gives
+    each run of tiles a 3-bit command: white, a copy of the tile to the left or above (numbered
+    over the whole framebuffer), one or two colours (8-bit Y and 6-bit Cb, Cr), black-and-white
+    masks, a DCT block, or a cached tile. Operands come from a second stream at the `u24` offset
+    in bytes 3–5. DCT blocks here are Rice-coded: luma in full, chroma as DC terms only, each
+    block's DC terms predicted from the previous block's.
+  - **1, a refinement pass**: a 2-bit selector per tile that sharpens the base block (luma deltas,
+    chroma DC steps and JPEG-luminance-Huffman AC terms), repeats the base pass's copy, or recalls
+    a tile from a 64,999-entry cache of refined tiles. It ends with `mvs`.
+  - **2, quantization tables**: 64 luma and 64 chroma bytes, in a 0×0 rectangle.
+
+  The inverse DCT is libjpeg's `jpeg_idct_islow`, integer for integer. Vesper's decoder is a port
+  of ard-rs's, which its author matched to Apple's own decoder; see THIRD-PARTY-NOTICES.md.
+  Vesper parses a rectangle in order, renders its DCT tiles across the CPU's cores, then applies
+  the tiles in order, so a copy sees exactly what decoding tile by tile would show.
 - **Cursor cache** (`0x450`): header x,y = hotspot, w,h = size, then `u32 id`. Ids up to 999 are
   macOS's built-in cursors and carry nothing else (ard-rs, from Apple's
   `_HandleCursorImageWithAlphaUpdate`; reading 8 bytes for them stalls the stream). Above 999

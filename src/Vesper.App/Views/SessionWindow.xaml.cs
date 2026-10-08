@@ -51,6 +51,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
     private double _rasterScale = 1;
     private bool _promptedThisAttempt;
     private bool _sizedToMac;
+    private string _loggedCodec = "";
 
     internal static void Open(MacProfile profile, string? password)
     {
@@ -275,11 +276,9 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         Surface.Focus(FocusState.Programmatic);
         UpdateHook();
         UpdateTitle();
-        if (App.Current.Data.Settings.ShowConnectionStats)
-        {
-            StatsText.Visibility = Visibility.Visible;
-            _statsTimer.Start();
-        }
+        StatsText.Visibility = App.Current.Data.Settings.ShowConnectionStats ? Visibility.Visible : Visibility.Collapsed;
+        _loggedCodec = "";
+        _statsTimer.Start();
         _ = SaveTypedPasswordAsync();
     }
 
@@ -700,7 +699,8 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         ActualItem.IsChecked = _profile.Scaling == ViewScaling.ActualSize;
         MatchItem.IsChecked = _profile.Resolution == ResolutionMode.MatchThisDisplay;
         NativeItem.IsChecked = _profile.Resolution == ResolutionMode.Native;
-        var color = _connection?.Session.Color ?? _profile.Color;
+        var color = _connection?.Session.Color ?? _profile.Quality;
+        AdaptiveItem.IsChecked = color == ColorQuality.Adaptive;
         FullColorItem.IsChecked = color == ColorQuality.Full;
         ThousandsItem.IsChecked = color == ColorQuality.Thousands;
         GrayItem.IsChecked = color == ColorQuality.Grayscale;
@@ -724,7 +724,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
     private void Color_Click(object sender, RoutedEventArgs e)
     {
         var color = Enum.Parse<ColorQuality>((string)((FrameworkElement)sender).Tag);
-        Remember(p => p.Color = color);
+        Remember(p => p.Quality = color);
         _connection?.Session.SetColorQuality(color);
     }
 
@@ -1002,13 +1002,21 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
     {
         if (_connection is null) return;
         var stats = _connection.Session.Stats;
+        if (stats.Codec != _loggedCodec)
+        {
+            // Which codec the Mac chose is the first question when a session is slow.
+            _loggedCodec = stats.Codec;
+            Diagnostics.Add($"Picture from {_profile.Host}: {stats.Codec}, {_connection.Session.Framebuffer.Width}×{_connection.Session.Framebuffer.Height}");
+        }
+        if (StatsText.Visibility != Visibility.Visible) return;
         string rtt = TcpRtt.Milliseconds(_connection.Socket) switch
         {
             double ms when ms < 1 => " · <1 ms",
             double ms => $" · {ms:0} ms",
             _ => "",
         };
-        StatsText.Text = $"{_renderer.FramesPerSecond:0} fps · {stats.UpdatesPerSecond:0} upd/s · {stats.MegabitsPerSecond:0.0} Mb/s{rtt}";
+        string codec = stats.Codec.Length > 0 ? $" · {stats.Codec}" : "";
+        StatsText.Text = $"{_renderer.FramesPerSecond:0} fps · {stats.UpdatesPerSecond:0} upd/s · {stats.MegabitsPerSecond:0.0} Mb/s{rtt}{codec}";
     }
 
     private async void OnClosed(object sender, WindowEventArgs e)

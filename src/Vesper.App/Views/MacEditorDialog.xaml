@@ -63,8 +63,9 @@
                         <ComboBoxItem Content="Match this display — the Mac scales Retina down first (fastest)" />
                         <ComboBoxItem Content="Every native pixel (sharpest, most bandwidth)" />
                     </ComboBox>
-                    <ComboBox x:Name="ColorBox" Header="Colour" HorizontalAlignment="Stretch">
-                        <ComboBoxItem Content="Full colour, lossless" />
+                    <ComboBox x:Name="ColorBox" Header="Picture" HorizontalAlignment="Stretch">
+                        <ComboBoxItem Content="Adaptive — Apple's fast codec, sharpens in a moment (recommended)" />
+                        <ComboBoxItem Content="Full colour, lossless — the most data" />
                         <ComboBoxItem Content="Thousands of colours — about half the data" />
                         <ComboBoxItem Content="Greyscale — for very slow connections" />
                     </ComboBox>

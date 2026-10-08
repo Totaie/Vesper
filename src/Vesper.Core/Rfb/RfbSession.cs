@@ -57,6 +57,7 @@ public sealed class RfbSession : IAsyncDisposable
     private uint _armedInterval;
     private double _updateCost;
     private long _lastRearmTicks;
+    private int _lastPixelEncoding = int.MinValue;
 
     // Stats over a rolling one-second window.
     private readonly Stopwatch _clock = Stopwatch.StartNew();
@@ -465,6 +466,8 @@ public sealed class RfbSession : IAsyncDisposable
         if (_apple)
         {
             // The Mac encodes with the first of zlib, ZRLE and its own codecs in this list.
+            // Adaptive lists the adaptive codec and RGB 5-5-5 first, as Apple's viewer does.
+            if (_color == ColorQuality.Adaptive) list.AddRange([AppleMessages.EncodingMvs, AppleMessages.EncodingRgb555Zlib]);
             if (_color == ColorQuality.Thousands) list.Add(AppleMessages.EncodingRgb555Zlib);
             if (_color == ColorQuality.Grayscale) list.Add(AppleMessages.EncodingGrayZlib);
             // The rest follows Apple's own viewer (Full quality), plus Raw, the rekey and LastRect,
@@ -623,6 +626,11 @@ public sealed class RfbSession : IAsyncDisposable
                 throw new ProtocolException($"The Mac sent a rectangle ({w}×{h} at {x},{y}) outside its {Framebuffer.Width}×{Framebuffer.Height} screen.");
             }
             pixels = true;
+            if (encoding != _lastPixelEncoding)
+            {
+                _lastPixelEncoding = encoding;
+                Stats.Codec = CodecName(encoding);
+            }
             switch (encoding)
             {
                 case EncodingRaw: await StandardDecoders.RawAsync(_reader, Framebuffer, rc, _decode, ct).ConfigureAwait(false); break;
@@ -631,6 +639,7 @@ public sealed class RfbSession : IAsyncDisposable
                 case EncodingHextile: await StandardDecoders.HextileAsync(_reader, Framebuffer, rc, ct).ConfigureAwait(false); break;
                 case EncodingZlib: await StandardDecoders.ZlibAsync(_reader, Framebuffer, rc, _decode, ct).ConfigureAwait(false); break;
                 case EncodingZrle: await ZrleDecoder.DecodeAsync(_reader, Framebuffer, rc, _decode, ct).ConfigureAwait(false); break;
+                case AppleMessages.EncodingMvs when _apple: await _decode.Mvs.DecodeAsync(_reader, Framebuffer, rc, _decode, ct).ConfigureAwait(false); break;
                 case AppleMessages.EncodingRgb555Zlib when _apple: await AppleZlibDecoders.Rgb555Async(_reader, Framebuffer, rc, _decode, ct).ConfigureAwait(false); break;
                 case AppleMessages.EncodingGrayZlib when _apple: await AppleZlibDecoders.Gray4Async(_reader, Framebuffer, rc, _decode, ct).ConfigureAwait(false); break;
                 default:
@@ -654,6 +663,20 @@ public sealed class RfbSession : IAsyncDisposable
             RequestUpdate(incremental: true);
         }
     }
+
+    private static string CodecName(int encoding) => encoding switch
+    {
+        AppleMessages.EncodingMvs => "MVS",
+        EncodingZlib => "zlib",
+        EncodingZrle => "ZRLE",
+        AppleMessages.EncodingRgb555Zlib => "RGB 5-5-5",
+        AppleMessages.EncodingGrayZlib => "grey",
+        EncodingRaw => "raw",
+        EncodingHextile => "Hextile",
+        EncodingRre => "RRE",
+        EncodingCopyRect => "CopyRect",
+        _ => encoding.ToString(System.Globalization.CultureInfo.InvariantCulture),
+    };
 
     private void RecordUpdate(long startedTicks, bool pixels)
     {

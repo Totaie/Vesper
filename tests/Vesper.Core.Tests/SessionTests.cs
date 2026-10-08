@@ -110,6 +110,39 @@ public sealed class SessionTests : IAsyncLifetime
         Assert.NotNull(session.Layout);
     }
 
+    /// <summary>For a lossy codec: the session shows exactly what FakeMac says a correct decoder shows.</summary>
+    private bool FramebufferMatchesViewerFrame(RfbSession session)
+    {
+        lock (_desktop.Sync)
+        lock (session.Framebuffer.Sync)
+        {
+            if (_desktop.ViewerFrame is not { } expected) return false;
+            if (session.Framebuffer.Width != _desktop.Width || session.Framebuffer.Height != _desktop.Height) return false;
+            var b = session.Framebuffer.Pixels;
+            for (int i = 0; i < expected.Length; i += 4)
+            {
+                if (expected[i] != b[i] || expected[i + 1] != b[i + 1] || expected[i + 2] != b[i + 2]) return false;
+            }
+            return true;
+        }
+    }
+
+    [Fact]
+    public async Task Adaptive_quality_paints_through_Apples_adaptive_codec()
+    {
+        int port = StartServer();
+        await using var session = await ConnectAsync(port, new RfbSessionOptions
+        {
+            Username = "vesper", Password = "evening-star", IdentityVerifier = new Pin(_ => true), Color = ColorQuality.Adaptive,
+        });
+        _ = session.RunAsync(_cts.Token);
+        await WaitForAsync(() => session.Stats.Codec == "MVS" && FramebufferMatchesViewerFrame(session));
+
+        // Switching to lossless mid-session repaints in zlib.
+        session.SetColorQuality(ColorQuality.Full);
+        await WaitForAsync(() => session.Stats.Codec == "zlib" && FramebufferMatchesDesktop(session));
+    }
+
     [Fact]
     public async Task Diffie_hellman_is_used_only_when_allowed()
     {
