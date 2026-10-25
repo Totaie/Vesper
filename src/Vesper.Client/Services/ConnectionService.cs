@@ -25,13 +25,13 @@ public enum SecurityLevel
 public sealed record SecuritySummary(SecurityLevel Level, string Headline, string Detail);
 
 /// <summary>Decisions only a person can make, asked on the UI thread.</summary>
-internal interface ITrustPrompts
+public interface ITrustPrompts
 {
     Task<bool> TrustMacIdentityAsync(MacProfile profile, MacIdentity identity, string? previousFingerprint);
     Task<bool> TrustSshHostKeyAsync(MacProfile profile, SshHostKey key, string? previousFingerprint);
 }
 
-internal sealed class ConnectedMac(RfbSession session, SshTunnel? tunnel, Socket socket, SecuritySummary security) : IAsyncDisposable
+public sealed class ConnectedMac(RfbSession session, SshTunnel? tunnel, Socket socket, SecuritySummary security) : IAsyncDisposable
 {
     public RfbSession Session { get; } = session;
     public SshTunnel? Tunnel { get; } = tunnel;
@@ -53,7 +53,7 @@ internal sealed class ConnectedMac(RfbSession session, SshTunnel? tunnel, Socket
 /// (direct or SSH), which sign-in methods that transport makes safe, identity pinning, and the
 /// session options.
 /// </summary>
-internal sealed class ConnectionService(AppData data, SecretVault vault)
+public sealed class ConnectionService(AppData data, SecretVault vault)
 {
     public async Task<ConnectedMac> ConnectAsync(
         MacProfile profile, string password, (int Width, int Height) displayPixels, ITrustPrompts prompts,

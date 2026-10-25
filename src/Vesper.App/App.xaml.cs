@@ -46,7 +46,7 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        Vault = new SecretVault(Data.VaultPath) { RequireHello = Data.Settings.RequireWindowsHello };
+        Vault = new SecretVault(Data.VaultPath, new Security.DpapiProtector(), new WindowsHello()) { RequireHello = Data.Settings.RequireWindowsHello };
         CheckVault();
         Connections = new ConnectionService(Data, Vault);
         _main = new MainWindow();
@@ -125,27 +125,4 @@ public partial class App : Application
         Models.ThemeChoice.Light => ElementTheme.Light,
         _ => ElementTheme.Default,
     };
-}
-
-/// <summary>An in-memory diagnostic log (never written to disk), shown in Settings → About.</summary>
-internal static class Diagnostics
-{
-    private static readonly Queue<string> Lines = new();
-
-    public static void Add(string line)
-    {
-        lock (Lines)
-        {
-            Lines.Enqueue($"{DateTime.Now:HH:mm:ss}  {line}");
-            while (Lines.Count > 200) Lines.Dequeue();
-        }
-#if DEBUG
-        try { File.AppendAllText(Path.Combine(AppContext.BaseDirectory, "debug-diagnostics.log"), $"{DateTime.Now:HH:mm:ss.fff}  {line}{Environment.NewLine}"); } catch { }
-#endif
-    }
-
-    public static string Text
-    {
-        get { lock (Lines) return string.Join(Environment.NewLine, Lines); }
-    }
 }

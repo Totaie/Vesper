@@ -8,6 +8,7 @@
       <Platform Solution="*|x64" Project="x64" />
       <Platform Solution="*|ARM64" Project="ARM64" />
     </Project>
+    <Project Path="src/Vesper.Client/Vesper.Client.csproj" />
     <Project Path="src/Vesper.Core/Vesper.Core.csproj" />
   </Folder>
   <Folder Name="/tests/">

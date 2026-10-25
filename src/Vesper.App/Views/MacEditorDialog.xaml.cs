@@ -70,7 +70,7 @@ public sealed partial class MacEditorDialog : ContentDialog
         _profile.ShareClipboard = ClipboardSwitch.IsOn;
         _profile.ViewOnly = ViewOnlySwitch.IsOn;
         _profile.AllowLegacySignIn = LegacySwitch.IsOn;
-        if (string.IsNullOrEmpty(_profile.Name)) _profile.Name = FriendlyName(_profile.Host);
+        if (string.IsNullOrEmpty(_profile.Name)) _profile.Name = MacNames.FriendlyName(_profile.Host);
         Password = PasswordBox.Password.Length > 0 ? PasswordBox.Password : null;
         ConnectAfterSaving = _isNew && connect;
         Result = _profile;
@@ -79,26 +79,9 @@ public sealed partial class MacEditorDialog : ContentDialog
     /// <summary>Accepts "vnc://host:port" and "host:port" as people paste them.</summary>
     private string NormalizeHost(string raw)
     {
-        string host = raw.Trim();
-        foreach (string scheme in new[] { "vnc://", "ard://", "ssh://" })
-        {
-            if (host.StartsWith(scheme, StringComparison.OrdinalIgnoreCase)) host = host[scheme.Length..];
-        }
-        if (host.Contains('@')) host = host[(host.IndexOf('@') + 1)..];
-        host = host.TrimEnd('/');
-        int colon = host.LastIndexOf(':');
-        if (colon > 0 && host.Count(c => c == ':') == 1 && int.TryParse(host[(colon + 1)..], out int port))
-        {
-            PortBox.Value = port;
-            host = host[..colon];
-        }
+        var (host, port) = MacNames.ParseAddress(raw);
+        if (port is { } p) PortBox.Value = p;
         return host;
-    }
-
-    private static string FriendlyName(string host)
-    {
-        string name = host.EndsWith(".local", StringComparison.OrdinalIgnoreCase) ? host[..^6] : host;
-        return name.Length > 0 && char.IsLetter(name[0]) ? char.ToUpperInvariant(name[0]) + name[1..] : name;
     }
 
     private static int PortOrDefault(double value, int fallback) =>

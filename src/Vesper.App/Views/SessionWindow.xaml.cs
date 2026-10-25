@@ -392,7 +392,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         CopyProfile(result, _profile);
         try
         {
-            await SavedPasswords.ApplyEditAsync(before, _profile, dialog.Password, dialog.RememberPassword, UnlockVaultAsync);
+            await SavedPasswords.ApplyEditAsync(App.Current.Vault, before, _profile, dialog.Password, dialog.RememberPassword, UnlockVaultAsync);
         }
         catch (Exception ex)
         {

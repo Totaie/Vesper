@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- What the Windows and Linux apps share above the protocol: saved Macs and settings, the
+       password vault, connecting with Vesper's security policy, and updates. No UI. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RuntimeIdentifiers>win-x64;win-arm64;linux-x64</RuntimeIdentifiers>
+    <RootNamespace>Vesper</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Vesper.Core.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Vesper.Core\Vesper.Core.csproj" />
+  </ItemGroup>
+</Project>

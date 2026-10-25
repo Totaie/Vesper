@@ -4,21 +4,26 @@ using Vesper.Models;
 namespace Vesper.Services;
 
 /// <summary>
-/// Vesper's saved state under %LOCALAPPDATA%\Vesper: Macs and settings as JSON (no secrets), and the
-/// encrypted password vault. Writes are atomic: a crash mid-save leaves the previous file intact.
+/// Vesper's saved state: Macs and settings as JSON (no secrets), and the encrypted password vault.
+/// On Windows it lives in %LOCALAPPDATA%\Vesper; on Linux in ~/.config/vesper (or under
+/// $XDG_CONFIG_HOME), readable only by you. Writes are atomic: a crash mid-save leaves the
+/// previous file intact.
 /// </summary>
-internal sealed class AppData
+public sealed class AppData
 {
+    private const UnixFileMode PrivateDirectory = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+    private const UnixFileMode PrivateFile = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+
     private readonly object _sync = new();
 
-    public AppData()
+    public AppData() : this(DefaultDirectory())
     {
-        Directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Vesper");
-#if DEBUG
-        // Development builds can keep their Macs and passwords apart from the installed app's.
-        if (Environment.GetEnvironmentVariable("VESPER_DEV_DATA") is { Length: > 0 } dev) Directory = dev;
-#endif
-        System.IO.Directory.CreateDirectory(Directory);
+    }
+
+    public AppData(string directory)
+    {
+        Directory = directory;
+        CreatePrivateDirectory(Directory);
         Profiles = Load(ProfilesPath, VesperJson.Default.ListMacProfile) ?? [];
         Settings = Load(SettingsPath, VesperJson.Default.AppSettings) ?? new AppSettings();
     }
@@ -28,10 +33,38 @@ internal sealed class AppData
     private string SettingsPath => Path.Combine(Directory, "settings.json");
     public string VaultPath => Path.Combine(Directory, "vault.bin");
 
+    /// <summary>Where downloaded updates wait, checked, until they're installed.</summary>
+    public string UpdatesDirectory => Path.Combine(Directory, "updates");
+
     public List<MacProfile> Profiles { get; }
     public AppSettings Settings { get; }
 
     public event Action? ProfilesChanged;
+
+    public static string DefaultDirectory()
+    {
+#if DEBUG
+        // Development builds can keep their Macs and passwords apart from the installed app's.
+        if (Environment.GetEnvironmentVariable("VESPER_DEV_DATA") is { Length: > 0 } dev) return dev;
+#endif
+        return OperatingSystem.IsWindows()
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Vesper")
+            // .NET resolves this to $XDG_CONFIG_HOME, or ~/.config.
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "vesper");
+    }
+
+    /// <summary>Creates a folder only you can open (on Linux; Windows profiles are already private).</summary>
+    public static void CreatePrivateDirectory(string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            System.IO.Directory.CreateDirectory(path);
+            return;
+        }
+        System.IO.Directory.CreateDirectory(path, PrivateDirectory);
+        // A folder made earlier, or by something else, is tightened too.
+        if ((File.GetUnixFileMode(path) & ~PrivateDirectory) != 0) File.SetUnixFileMode(path, PrivateDirectory);
+    }
 
     public MacProfile? Find(Guid id)
     {
@@ -76,7 +109,15 @@ internal sealed class AppData
     public static void WriteAtomic(string path, byte[] bytes)
     {
         string temp = path + ".tmp";
-        using (var f = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))
+        var options = new FileStreamOptions
+        {
+            Mode = FileMode.Create,
+            Access = FileAccess.Write,
+            Share = FileShare.None,
+            Options = FileOptions.WriteThrough,
+        };
+        if (!OperatingSystem.IsWindows()) options.UnixCreateMode = PrivateFile;
+        using (var f = new FileStream(temp, options))
         {
             f.Write(bytes);
         }

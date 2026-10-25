@@ -10,7 +10,7 @@ namespace Vesper.Services;
 /// (PKCS#1 v1.5, so repeatable) is fed through HKDF to make the vault's key-encryption key; the
 /// private key never leaves the TPM, and every use asks for your face, fingerprint or PIN.
 /// </summary>
-internal static class WindowsHello
+internal sealed class WindowsHello : IUserPresence
 {
     private const string CredentialName = "Vesper password vault";
 
@@ -26,7 +26,7 @@ internal static class WindowsHello
         }
     }
 
-    public static async Task<byte[]?> SignAsync(byte[] challenge, bool create)
+    public async Task<byte[]?> SignAsync(byte[] challenge, bool create)
     {
         using var focus = BringPromptForward();
         var retrieval = create

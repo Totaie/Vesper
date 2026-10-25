@@ -64,6 +64,12 @@
           "Microsoft.WindowsAppSDK.Base": "1.8.251216001"
         }
       },
+      "vesper.client": {
+        "type": "Project",
+        "dependencies": {
+          "Vesper.Core": "[0.1.1, )"
+        }
+      },
       "vesper.core": {
         "type": "Project",
         "dependencies": {

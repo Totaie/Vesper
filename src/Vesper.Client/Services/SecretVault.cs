@@ -1,12 +1,12 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
-using Vesper.Interop;
 using Vesper.Models;
+using Vesper.Security;
 
 namespace Vesper.Services;
 
-internal enum VaultLookup
+public enum VaultLookup
 {
     Found,
     Missing,
@@ -19,12 +19,22 @@ internal enum VaultLookup
 }
 
 /// <summary>
+/// A second factor that can sign a challenge repeatably, used to wrap the vault key: Windows Hello.
+/// </summary>
+public interface IUserPresence
+{
+    /// <summary>Signs <paramref name="challenge"/>, prompting the user; null if they decline.</summary>
+    Task<byte[]?> SignAsync(byte[] challenge, bool create);
+}
+
+/// <summary>
 /// Saved passwords, encrypted at rest.
 ///
 /// The secrets are sealed with AES-256-GCM under a random vault key. That key is protected by
-/// Windows DPAPI (bound to this Windows account), and, when Windows Hello is required, also
-/// wrapped under a key derived from a Windows Hello signature, so another program running as you
-/// can't open the vault without a visible Hello prompt. Unlocked secrets live in memory only
+/// the operating system's per-user secret store (<see cref="IVaultKeyProtector"/>: DPAPI on
+/// Windows, the login keyring on Linux), and, when Windows Hello is required, also wrapped under
+/// a key derived from a Windows Hello signature, so another program running as you can't open
+/// the vault without a visible Hello prompt. Unlocked secrets live in memory only
 /// until the vault locks, and are wiped when it does.
 ///
 /// Each password is sealed together with a fingerprint of where it may go: the Mac's address,
@@ -32,14 +42,13 @@ internal enum VaultLookup
 /// macs.json, which any program running as you can edit; if they no longer match, the password
 /// isn't released, so an edited profile can't quietly send a saved password somewhere else.
 ///
-/// File layout: "VSPR", version (2; 1 had no fingerprints), mode (0 DPAPI, 1 DPAPI + Hello),
-/// u32 n, n bytes of DPAPI blob, 12-byte nonce, 16-byte tag, u32 m, m bytes of ciphertext. The
+/// File layout: "VSPR", version (2; 1 had no fingerprints), mode (0 protected key, 1 protected
+/// key + Hello), u32 n, n bytes of protected key, 12-byte nonce, 16-byte tag, u32 m, m bytes of ciphertext. The
 /// 6-byte header is authenticated.
 /// </summary>
-internal sealed class SecretVault
+public sealed class SecretVault
 {
     private static readonly byte[] Magic = "VSPR"u8.ToArray();
-    private static readonly byte[] DpapiEntropy = "Vesper vault v1"u8.ToArray();
     private static readonly byte[] HelloInfo = "Vesper vault key-encryption key v1"u8.ToArray();
     private static readonly byte[] BindingDomain = "Vesper password binding v1"u8.ToArray();
     private const byte Version = 2;
@@ -52,16 +61,26 @@ internal sealed class SecretVault
     }
 
     private readonly string _path;
+    private readonly IVaultKeyProtector _protector;
+    private readonly IUserPresence? _presence;
     private readonly object _sync = new();
     private Dictionary<Guid, Entry> _secrets = [];
     private byte[]? _vaultKey;
     private byte[]? _helloSalt;
 
-    public SecretVault(string path)
+    public SecretVault(string path, IVaultKeyProtector protector, IUserPresence? presence = null)
     {
         _path = path;
+        _protector = protector;
+        _presence = presence;
         UsesHello = File.Exists(path) && ReadMode() == 1;
     }
+
+    /// <summary>Whether passwords can be saved on this computer at all.</summary>
+    public bool CanSave => _protector.IsAvailable;
+
+    /// <summary>Why they can't, when <see cref="CanSave"/> is false.</summary>
+    public string UnavailableReason => _protector.UnavailableReason;
 
     public bool IsUnlocked
     {
@@ -111,8 +130,12 @@ internal sealed class SecretVault
     public async Task<bool> UnlockAsync()
     {
         if (IsUnlocked) return true;
+        if (!CanSave) throw new InvalidOperationException(UnavailableReason);
         if (!File.Exists(_path))
         {
+            // Sealing a first key reaches the keyring, which may prompt: do it off the UI thread
+            // now, so saving later doesn't wait on it.
+            await Task.Run(() => CryptographicOperations.ZeroMemory(_protector.Protect(new byte[32])));
             lock (_sync)
             {
                 _vaultKey = RandomNumberGenerator.GetBytes(32);
@@ -140,7 +163,8 @@ internal sealed class SecretVault
         {
             throw new InvalidOperationException("The password vault isn't protected by Windows Hello, though Vesper is set to require it. Vesper didn't make it that way, so it isn't used.");
         }
-        byte[] unprotected = Unprotect(protectedKey);
+        // The keyring may show its own unlock prompt: keep it off the UI thread.
+        byte[] unprotected = await Task.Run(() => _protector.Unprotect(protectedKey));
         byte[] vaultKey;
         byte[]? helloSalt = null;
         try
@@ -196,7 +220,7 @@ internal sealed class SecretVault
         catch (Exception e) when (e is CryptographicException or ArgumentOutOfRangeException or IndexOutOfRangeException)
         {
             CryptographicOperations.ZeroMemory(vaultKey);
-            throw new InvalidOperationException("The password vault couldn't be opened. It may have been created by another Windows account or damaged.");
+            throw new InvalidOperationException("The password vault couldn't be opened. It may have been created by another user account or damaged.");
         }
         finally
         {
@@ -290,6 +314,7 @@ internal sealed class SecretVault
             _vaultKey = null;
             _helloSalt = null;
         }
+        _protector.Forget();
         if (was) Locked?.Invoke();
     }
 
@@ -359,7 +384,7 @@ internal sealed class SecretVault
             {
                 // Hello mode without a fresh KEK: keep the previously wrapped key from disk.
                 var existing = Parse(File.ReadAllBytes(_path));
-                keyMaterial = Unprotect(existing.ProtectedKey);
+                keyMaterial = _protector.Unprotect(existing.ProtectedKey);
             }
             else
             {
@@ -377,7 +402,7 @@ internal sealed class SecretVault
         {
             keyMaterial = (byte[])_vaultKey!.Clone();
         }
-        byte[] protectedKey = Protect(keyMaterial);
+        byte[] protectedKey = _protector.Protect(keyMaterial);
         CryptographicOperations.ZeroMemory(keyMaterial);
 
         var file = new byte[header.Length + 4 + protectedKey.Length + 12 + 16 + 4 + ciphertext.Length];
@@ -393,9 +418,10 @@ internal sealed class SecretVault
         AppData.WriteAtomic(_path, file);
     }
 
-    private static async Task<byte[]?> DeriveHelloKeyAsync(byte[] salt, bool create)
+    private async Task<byte[]?> DeriveHelloKeyAsync(byte[] salt, bool create)
     {
-        byte[]? signature = await WindowsHello.SignAsync(salt, create);
+        if (_presence is null) throw new InvalidOperationException("This vault needs Windows Hello, which isn't available here.");
+        byte[]? signature = await _presence.SignAsync(salt, create);
         if (signature is null) return null;
         try
         {
@@ -476,54 +502,5 @@ internal sealed class SecretVault
             result[id] = new Entry(binding, s.Slice(at, length).ToArray()); at += length;
         }
         return result;
-    }
-
-    private static unsafe byte[] Protect(byte[] data)
-    {
-        fixed (byte* p = data)
-        fixed (byte* e = DpapiEntropy)
-        {
-            var input = new Native.DataBlob { Size = data.Length, Data = (nint)p };
-            var entropy = new Native.DataBlob { Size = DpapiEntropy.Length, Data = (nint)e };
-            Native.DataBlob output;
-            if (!Native.CryptProtectData(&input, 0, &entropy, 0, 0, Native.CRYPTPROTECT_UI_FORBIDDEN, &output))
-            {
-                throw new CryptographicException("Windows couldn't protect the vault key (DPAPI).");
-            }
-            try
-            {
-                return new ReadOnlySpan<byte>((void*)output.Data, output.Size).ToArray();
-            }
-            finally
-            {
-                Native.LocalFree(output.Data);
-            }
-        }
-    }
-
-    private static unsafe byte[] Unprotect(byte[] data)
-    {
-        fixed (byte* p = data)
-        fixed (byte* e = DpapiEntropy)
-        {
-            var input = new Native.DataBlob { Size = data.Length, Data = (nint)p };
-            var entropy = new Native.DataBlob { Size = DpapiEntropy.Length, Data = (nint)e };
-            Native.DataBlob output;
-            if (!Native.CryptUnprotectData(&input, 0, &entropy, 0, 0, Native.CRYPTPROTECT_UI_FORBIDDEN, &output))
-            {
-                throw new InvalidOperationException("The password vault belongs to a different Windows account, or was damaged.");
-            }
-            try
-            {
-                var span = new Span<byte>((void*)output.Data, output.Size);
-                byte[] result = span.ToArray();
-                span.Clear();
-                return result;
-            }
-            finally
-            {
-                Native.LocalFree(output.Data);
-            }
-        }
     }
 }

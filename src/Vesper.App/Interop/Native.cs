@@ -5,28 +5,6 @@ namespace Vesper.Interop;
 /// <summary>The Win32 calls Vesper needs, and nothing else.</summary>
 internal static unsafe partial class Native
 {
-    // ── DPAPI ──────────────────────────────────────────────────────────────
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct DataBlob
-    {
-        public int Size;
-        public nint Data;
-    }
-
-    public const int CRYPTPROTECT_UI_FORBIDDEN = 0x1;
-
-    [LibraryImport("crypt32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static partial bool CryptProtectData(DataBlob* dataIn, nint description, DataBlob* entropy, nint reserved, nint prompt, int flags, DataBlob* dataOut);
-
-    [LibraryImport("crypt32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static partial bool CryptUnprotectData(DataBlob* dataIn, nint description, DataBlob* entropy, nint reserved, nint prompt, int flags, DataBlob* dataOut);
-
-    [LibraryImport("kernel32.dll")]
-    public static partial nint LocalFree(nint mem);
-
     // ── Clipboard ──────────────────────────────────────────────────────────
 
     [LibraryImport("user32.dll", EntryPoint = "RegisterClipboardFormatW", StringMarshalling = StringMarshalling.Utf16)]

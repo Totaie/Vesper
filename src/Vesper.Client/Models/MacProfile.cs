@@ -115,6 +115,12 @@ public sealed class AppSettings
     public double ScrollSpeed { get; set; } = 1.0;
     public bool ShowConnectionStats { get; set; }
     public ThemeChoice Theme { get; set; } = ThemeChoice.System;
+
+    /// <summary>Look for a new version on GitHub a little after starting, and twice a day while running.</summary>
+    public bool CheckForUpdates { get; set; } = true;
+
+    /// <summary>A version the user chose to skip: Vesper doesn't offer it again (a newer one is offered).</summary>
+    public string? SkippedVersion { get; set; }
 }
 
 [JsonSourceGenerationOptions(WriteIndented = true, UseStringEnumConverter = true)]

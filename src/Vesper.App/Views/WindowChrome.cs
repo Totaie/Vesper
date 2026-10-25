@@ -46,29 +46,3 @@ internal static class WindowChrome
 
     public static nint Handle(Window window) => WindowNative.GetWindowHandle(window);
 }
-
-/// <summary>Friendly names for Mac model identifiers (hw.model).</summary>
-internal static class MacModels
-{
-    public static string Describe(string? model)
-    {
-        if (string.IsNullOrEmpty(model)) return "Mac";
-        string m = model;
-        if (m.StartsWith("MacBookPro", StringComparison.Ordinal)) return "MacBook Pro";
-        if (m.StartsWith("MacBookAir", StringComparison.Ordinal)) return "MacBook Air";
-        if (m.StartsWith("Macmini", StringComparison.Ordinal)) return "Mac mini";
-        if (m.StartsWith("MacPro", StringComparison.Ordinal)) return "Mac Pro";
-        if (m.StartsWith("iMac", StringComparison.Ordinal)) return "iMac";
-        return m switch
-        {
-            "Mac13,1" or "Mac13,2" or "Mac14,13" or "Mac14,14" or "Mac15,14" or "Mac16,9" => "Mac Studio",
-            "Mac14,3" or "Mac14,12" or "Mac16,10" or "Mac16,11" => "Mac mini",
-            "Mac14,8" => "Mac Pro",
-            "Mac15,4" or "Mac15,5" or "Mac16,2" or "Mac16,3" => "iMac",
-            "Mac14,2" or "Mac14,15" or "Mac15,12" or "Mac15,13" or "Mac16,12" or "Mac16,13" => "MacBook Air",
-            "Mac14,5" or "Mac14,6" or "Mac14,9" or "Mac14,10" or "Mac14,7" or "Mac15,3" or "Mac15,6" or "Mac15,7" or "Mac15,8"
-                or "Mac15,9" or "Mac15,10" or "Mac15,11" or "Mac16,1" or "Mac16,5" or "Mac16,6" or "Mac16,7" or "Mac16,8" => "MacBook Pro",
-            _ => "Mac",
-        };
-    }
-}

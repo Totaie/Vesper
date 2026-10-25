@@ -120,7 +120,7 @@ public sealed partial class MainWindow : Window
         {
             try
             {
-                await SavedPasswords.ApplyEditAsync(existing, result, dialog.Password, dialog.RememberPassword, EnsureVaultAsync);
+                await SavedPasswords.ApplyEditAsync(App.Current.Vault, existing, result, dialog.Password, dialog.RememberPassword, EnsureVaultAsync);
             }
             catch (Exception e)
             {
@@ -239,7 +239,7 @@ public sealed class MacCardItem(MacProfile profile)
     public Guid Id => profile.Id;
     public string Name => DisplayName(profile);
     public string Address => string.IsNullOrEmpty(profile.Username) ? profile.Address : $"{profile.Username} @ {profile.Address}";
-    public string ModelName => MacModels.Describe(profile.MacModel);
+    public string ModelName => MacNames.Model(profile.MacModel);
     public bool HasSavedPassword => profile.HasSavedPassword;
 
     public string SecurityText => profile.Transport == TransportMode.Ssh
@@ -251,18 +251,7 @@ public sealed class MacCardItem(MacProfile profile)
     public Brush SecurityBrush => (Brush)Application.Current.Resources[
         profile.PinnedIdentityFingerprint is null && profile.PinnedSshKey is null ? "TextFillColorSecondaryBrush" : "VesperVerifiedBrush"];
 
-    public string LastConnected => profile.LastConnected is { } t ? Relative(t) : "Not connected yet";
+    public string LastConnected => MacNames.LastConnected(profile);
 
-    public static string DisplayName(MacProfile p) => string.IsNullOrWhiteSpace(p.Name) ? p.Host : p.Name;
-
-    private static string Relative(DateTimeOffset t)
-    {
-        var ago = DateTimeOffset.Now - t;
-        return ago.TotalMinutes < 1 ? "just now"
-            : ago.TotalMinutes < 60 ? $"{(int)ago.TotalMinutes} min ago"
-            : ago.TotalHours < 24 ? $"{(int)ago.TotalHours} h ago"
-            : ago.TotalDays < 2 ? "yesterday"
-            : ago.TotalDays < 7 ? $"{(int)ago.TotalDays} days ago"
-            : t.ToString("d MMM");
-    }
+    public static string DisplayName(MacProfile p) => MacNames.DisplayName(p);
 }
