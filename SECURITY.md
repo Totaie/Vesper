@@ -1,6 +1,6 @@
 # Security model
 
-Vesper puts the screen and keyboard of a Mac on a Windows PC. Everything that crosses between
+Vesper puts the screen and keyboard of a Mac on a Windows PC or a Linux desktop. Everything that crosses between
 them can be sensitive: what's on screen, what you type (including passwords), and the account
 password used to sign in. This document is what Vesper defends against, how, and where the
 limits are.
@@ -40,20 +40,34 @@ The answer is authenticating the Mac before anything secret is sent:
   path itself authenticates the Mac:
   - inside a pinned SSH tunnel;
   - straight to the Mac's own Tailscale address (100.64.0.0/10 or fd7a:115c:a1e0::/48, reached
-    through this PC's Tailscale adapter), where WireGuard proves which machine answers.
+    through this PC's Tailscale adapter), where WireGuard proves which machine answers, and only
+    when the Mac is named by that node itself: its 100.x address or its MagicDNS name under
+    `.ts.net`. A name like `studio.local` doesn't count even if it resolves to a tailnet
+    address, because any node on the tailnet could answer for it over mDNS or LLMNR.
     Traffic that only passes through a VPN doesn't count: a Tailscale subnet router or exit
     node, a commercial VPN or a WireGuard tunnel to a network all leave the last hop open.
     Loopback doesn't count either, since a forwarded port can lead anywhere.
 
   The only other case is a Mac the user explicitly allows it for ("Allow Apple's older sign-in
-  on unprotected networks", off by default). Even then it's refused for a Mac that has ever
-  proven its identity key, and the session's security indicator turns amber.
+  on unprotected networks", off by default). And outside the SSH tunnel it's refused for a Mac
+  that has ever proven its identity key, on Tailscale too: once the key is known, only it
+  counts. The session's security indicator turns amber whenever the Mac's identity isn't
+  verified.
 - *Downgrade attempts*: an attacker who strips type 33 from the offer, or answers an RSA login
   with "rejected", can't push Vesper to Diffie-Hellman on an unprotected network. A Mac with a
   pinned identity key that stops offering RSA sign-in gets a warning, not a fallback. The
   single retry with Diffie-Hellman after a refused RSA login happens only where Diffie-Hellman
-  is allowed anyway. Vesper remembers that a Mac refuses RSA sign-in only when it learned that
-  over an authenticated path, and the Mac's editor can reset it.
+  is allowed anyway, on a fresh connection that must reach the same address and is judged
+  afresh. Vesper remembers that a Mac refuses RSA sign-in only when it learned that over an
+  authenticated path and the session then proved itself, and the Mac's editor can reset it.
+- *A changed key with a saved password*: if a Mac's identity key or SSH host key changes and
+  you accept the new one, Vesper still won't send the saved password to it: you type it once.
+  The saved password was sealed for the old key.
+- *The SSH tunnel's far end*: the tunnel only carries what Vesper opens. Channels the server
+  tries to open (a `direct-tcpip` request asking the PC to connect somewhere for it) are refused,
+  so a hostile Mac, or anyone whose host key was trusted, can't use the tunnel to reach services
+  on this PC's loopback or its network. Keyboard-interactive sign-in gives the password to one
+  hidden prompt only.
 
 **Trust on first use** means the very first connection to a Mac can't be verified this way.
 Make the first connection on a network you trust (your home LAN, or over Tailscale). For the
@@ -90,12 +104,16 @@ Everything the server sends is untrusted input:
 
 The decoders are written in C#, so out-of-range accesses throw instead of corrupting memory.
 
-### Other software on this PC
+### Other software on this computer
 
-- **Saved passwords** live in `%LOCALAPPDATA%\Vesper\vault.bin`, sealed with AES-256-GCM (the
-  header is authenticated) under a random 256-bit vault key. That key is protected by DPAPI
-  (CurrentUser, with Vesper-specific entropy), so the file is useless on another account or
-  another machine. With **Require Windows Hello** on, the vault key is also wrapped under a key
+- **Saved passwords** live in `%LOCALAPPDATA%\Vesper\vault.bin` (on Linux,
+  `~/.config/vesper/vault.bin`), sealed with AES-256-GCM (the header is authenticated) under a
+  random 256-bit vault key. On Windows that key is protected by DPAPI (CurrentUser, with
+  Vesper-specific entropy), so the file is useless on another account or another machine. On
+  Linux it's sealed (AES-256-GCM) under a random key kept in your login keyring through the
+  Secret Service (GNOME Keyring, KWallet), which encrypts it with your login password; without a
+  keyring Vesper doesn't save passwords at all rather than keep them somewhere weaker. On Linux
+  Vesper's folder is created `0700` and its files `0600`. With **Require Windows Hello** on, the vault key is also wrapped under a key
   derived (HKDF-SHA-256) from a Windows Hello signature. Hello keys are TPM-backed RSA with
   repeatable PKCS#1 signatures, so the vault can't be opened without a visible face, fingerprint
   or PIN prompt, even by malware running as you. Unlocked passwords are wiped from memory after
@@ -125,7 +143,12 @@ The decoders are written in C#, so out-of-range accesses throw instead of corrup
   focus, and it records nothing. It keeps a key's release from Windows only if it kept the
   press, so a key already held when the hook went in is released in Windows too. Held keys are
   released on the Mac whenever focus leaves, so nothing sticks either side.
-- **Process hardening**: the current directory is removed from the DLL search path; images
+- **Settings from disk** are checked as they're read: values outside what Vesper offers (scroll
+  speed, lock delay, ports, menu choices) are put back in range, so an edited file can't hang a
+  session or keep saved passwords unlocked for ever.
+- **Process hardening** (Linux): Vesper marks itself non-dumpable at start, so it leaves no core
+  dumps and other programs running as you can't attach a debugger to it.
+- **Process hardening** (Windows): the current directory is removed from the DLL search path; images
   from remote shares and low-integrity locations are refused; legacy injection points
   (AppInit_DLLs, global window-hook DLLs, Winsock LSPs) are disabled; and Windows Error
   Reporting is disabled for Vesper, because a crash dump would contain screen contents, typed
@@ -139,15 +162,38 @@ The decoders are written in C#, so out-of-range accesses throw instead of corrup
 
 ### Leaks from Vesper itself
 
-- No telemetry, analytics, crash reporting, update checks or accounts. The only outbound
-  connections go to the Macs you add (plus local-network DNS-SD listening for "Macs on this
-  network", which you can turn off).
+- No telemetry, analytics, crash reporting or accounts. The outbound connections go to the Macs
+  you add; to GitHub to check for updates (twice a day, unless you turn it off in Settings); and,
+  on Windows, multicast DNS-SD queries on the local network for "Macs on this network" (which you
+  can turn off too).
 - Nothing is logged to disk in release builds. A short diagnostic log (connection results, never
   credentials, keys, keystrokes or clipboard contents) is kept in memory and shown in
   Settings › About.
 - Dependencies are few and Microsoft-published (Windows App SDK, Win2D,
   Microsoft.DevTunnels.Ssh). Versions are pinned centrally, restores are checked against lock
   files, and `NuGetAudit` fails the build on any known vulnerability.
+
+### Updates
+
+Vesper checks its public releases page (`github.com/Totaie/Vesper-releases`) a little after
+starting and twice a day, over HTTPS. Those requests tell GitHub this computer's address and
+Vesper's version, nothing else.
+
+- **Signed.** Each release carries `vesper-update.json`, describing every download by name, size
+  and SHA-256, and a signature over it made with Vesper's release key: ECDSA P-256 over a
+  labelled copy of the file. The private key exists only on the release machine; Vesper carries
+  the public half and acts on nothing whose signature doesn't verify. Whoever controls the
+  network, GitHub, or the releases page itself can withhold updates, but can't make Vesper
+  install anything else.
+- **Only forward.** A description must name a higher version than the one running, so an old,
+  validly signed release can't be replayed to roll Vesper back.
+- **Checked twice.** A download must match the signed size and hash as it arrives (anything
+  longer is cut off, anything different is deleted), and again right before it's installed.
+  File names are plain names, never paths; a portable update is unpacked only inside Vesper's
+  own folder.
+- **Installed the way Vesper was**: the next per-user Setup run silently (no administrator
+  prompt), a new app folder the portable launcher swaps in, or `pacman -U` through `pkexec`,
+  which asks for your password. Nothing is installed until you restart or quit Vesper.
 
 ## Limits
 
@@ -160,13 +206,17 @@ The decoders are written in C#, so out-of-range accesses throw instead of corrup
   Apple's side and not something a client can fix; the SSH tunnel or Tailscale put that
   exchange out of an eavesdropper's reach.
 - **Trust on first use** can't protect the very first connection (see above).
-- **Malware running as you** can edit Vesper's files, and with a per-user install, Vesper
-  itself. Vesper detects the tampering it can (profiles that no longer match their passwords, a
+- **Malware running as you** can edit Vesper's files, and with a per-user install (or the
+  portable folder), Vesper itself, including a downloaded update waiting to be installed. Vesper detects the tampering it can (profiles that no longer match their passwords, a
   vault without the Hello protection you chose), but it can't make a compromised account safe.
-- **Malware with full control of your Windows account** can read the screen of an
+- **Malware with full control of your account** can read the screen of an
   already-connected session the way it can read anything else you see, and it can capture what
   you type before Vesper does. Vesper raises the bar (capture exclusion, Hello-bound vault,
   injection hardening) but can't make a compromised PC safe.
+- **Linux can't hide a window from screen capture.** On Wayland, capturing the screen needs your
+  approval; on X11, any program on your display can read it.
+- **The releases aren't code-signed** (Authenticode) yet, so Windows SmartScreen warns on first
+  run. Updates are verified by Vesper's own signature instead (above).
 - **The Mac** has to be trustworthy too: Vesper protects the connection, not the Mac.
 
 ## Reporting

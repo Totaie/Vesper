@@ -10,6 +10,8 @@ using Vesper.Updates;
 //   verify <manifest>           check a signature with the key built into Vesper
 //   backup <file>               write a passphrase-encrypted copy of the key (asks for the passphrase)
 //   restore <file>              put a backed-up key on this PC
+//   check <as-version> <kind>   update the way an installed copy would, from the live releases
+//                               page, pretending to be <as-version> (downloads into %TEMP% only)
 
 string keyFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".vesper-release");
 string keyFile = Path.Combine(keyFolder, "update-signing.key");
@@ -129,8 +131,21 @@ try
             return 0;
         }
 
+        case ["check", var asVersion, var kind]:
+        {
+            string folder = Path.Combine(Path.GetTempPath(), "vesper-update-check-" + Guid.NewGuid().ToString("N"));
+            var data = new Vesper.Services.AppData(folder);
+            using var service = new UpdateService(data, Version.Parse(asVersion), null, UpdateSigning.PublicKey, kind);
+            await service.CheckAsync(manual: true);
+            Console.WriteLine($"Status: {service.Status}; offered {service.Offer?.Version ?? "nothing"}");
+            if (service.Error is { } error) Console.WriteLine("Error: " + error);
+            if (service.DownloadedFile is { } file) Console.WriteLine($"Downloaded and verified: {file} ({new FileInfo(file).Length:N0} bytes)");
+            try { Directory.Delete(folder, recursive: true); } catch (IOException) { }
+            return service.Status is UpdateStatus.Ready or UpdateStatus.UpToDate ? 0 : 2;
+        }
+
         default:
-            Console.Error.WriteLine("usage: keygen | public-key | manifest <dist> <version> <summary> | sign <manifest> | verify <manifest> | backup <file> | restore <file>");
+            Console.Error.WriteLine("usage: keygen | public-key | manifest <dist> <version> <summary> | sign <manifest> | verify <manifest> | backup <file> | restore <file> | check <as-version> <kind>");
             return 1;
     }
 }

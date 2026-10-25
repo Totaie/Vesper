@@ -55,6 +55,13 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
     private string _loggedCodec = "";
     private (int Width, int Height) _fitTarget;
 
+    // A session that drops (Wi-Fi roaming, the Mac restarting Screen Sharing) comes back by itself
+    // when its password is saved; a typed one isn't kept around for this.
+    private static readonly TimeSpan[] ReconnectDelays = [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(15)];
+    private int _reconnectAttempt;
+    private bool _wasSecured;
+    private CancellationTokenSource? _reconnectWait;
+
     internal static void Open(MacProfile profile, string? password)
     {
         var existing = App.Current.Sessions.FirstOrDefault(s => s._profile.Id == profile.Id);
@@ -130,9 +137,9 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
 
     // ───────────────────────────── Connecting ─────────────────────────────
 
-    private async Task ConnectAsync()
+    private async Task ConnectAsync(bool automatic = false)
     {
-        ShowConnecting();
+        ShowConnecting(automatic);
         string? password = _password;
         _password = null;
         string? problem = null;
@@ -218,6 +225,12 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
             await ConnectAsync();
             return;
         }
+        catch (Exception e) when (automatic && IsDrop(e) && !_closing)
+        {
+            Diagnostics.Add($"Reconnecting to {_profile.Host} failed: {e.GetType().Name}: {e.Message}");
+            await ReconnectSoonAsync(Explain(e, duringSession: true));
+            return;
+        }
         catch (Exception e)
         {
             Diagnostics.Add($"Connect to {_profile.Host} failed: {e.GetType().Name}: {e.Message}" +
@@ -294,6 +307,8 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
 
         ShowSecurity(connection.Security, session.Info);
         Remember(p => p.LastConnected = DateTimeOffset.Now);
+        _wasSecured = true;
+        _reconnectAttempt = 0;
         Overlay.Visibility = Visibility.Collapsed;
         Surface.Focus(FocusState.Programmatic);
         UpdateHook();
@@ -307,6 +322,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
     private async Task RunAsync(ConnectedMac connection)
     {
         string title = "Disconnected", reason = "The Mac closed the connection.";
+        bool dropped = false;
         try
         {
             await connection.Session.RunAsync(_cts!.Token);
@@ -319,11 +335,46 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         {
             if (e is SecurityRefusedException) title = "Connection stopped";
             reason = Explain(e, duringSession: true);
+            dropped = IsDrop(e);
             Diagnostics.Add($"Session with {_profile.Host} ended: {e.GetType().Name}: {e.Message}");
         }
         if (_closing) return;
         await TearDownAsync();
+        if (dropped && _wasSecured && _profile.HasSavedPassword)
+        {
+            await ReconnectSoonAsync(reason);
+            return;
+        }
         ShowProblem(title, reason, retry: true);
+    }
+
+    /// <summary>The network failing under a session, as opposed to the Mac or Vesper refusing something.</summary>
+    private static bool IsDrop(Exception e) => e is IOException or SocketException or TimeoutException or ConnectionClosedException;
+
+    /// <summary>Waits a moment, then tries again, a few times, before giving up and saying why.</summary>
+    private async Task ReconnectSoonAsync(string reason)
+    {
+        if (_reconnectAttempt >= ReconnectDelays.Length)
+        {
+            _reconnectAttempt = 0;
+            ShowProblem("Disconnected", reason, retry: true);
+            return;
+        }
+        var delay = ReconnectDelays[_reconnectAttempt++];
+        ShowProblem($"Reconnecting to {MacCardItem.DisplayName(_profile)}",
+            $"{reason} Trying again in {delay.TotalSeconds:0} seconds ({_reconnectAttempt} of {ReconnectDelays.Length}).", retry: true);
+        _reconnectWait?.Cancel();
+        _reconnectWait = new CancellationTokenSource();
+        try
+        {
+            await Task.Delay(delay, _reconnectWait.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return; // retried by hand, or closed
+        }
+        if (_closing || _connection is not null) return;
+        await ConnectAsync(automatic: true);
     }
 
     private async Task TearDownAsync()
@@ -357,7 +408,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         _ => e.Message,
     };
 
-    private void ShowConnecting()
+    private void ShowConnecting(bool automatic = false)
     {
         _steps.Clear();
         _steps.Add(new StepItem(ConnectStage.Reaching, $"Reaching {_profile.Host}"));
@@ -367,7 +418,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         _steps.Add(new StepItem(ConnectStage.Encrypting, "Encrypting the session"));
         _steps.Add(new StepItem(ConnectStage.Ready, "Bringing up the screen"));
         SetStage(ConnectStage.Reaching);
-        OverlayTitle.Text = $"Connecting to {MacCardItem.DisplayName(_profile)}";
+        OverlayTitle.Text = $"{(automatic ? "Reconnecting" : "Connecting")} to {MacCardItem.DisplayName(_profile)}";
         OverlayMessage.Visibility = Visibility.Collapsed;
         StepsList.Visibility = Visibility.Visible;
         RetryButton.Visibility = Visibility.Collapsed;
@@ -398,7 +449,12 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         if (_fullScreen) SetFullScreen(false);
     }
 
-    private async void Retry_Click(object sender, RoutedEventArgs e) => await ConnectAsync();
+    private async void Retry_Click(object sender, RoutedEventArgs e)
+    {
+        _reconnectWait?.Cancel();
+        _reconnectAttempt = 0;
+        await ConnectAsync();
+    }
 
     private async void EditMac_Click(object sender, RoutedEventArgs e)
     {
@@ -1100,6 +1156,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
     private async void OnClosed(object sender, WindowEventArgs e)
     {
         _closing = true;
+        _reconnectWait?.Cancel();
         _floatingTimer.Stop();
         await TearDownAsync();
         _renderer.Dispose();

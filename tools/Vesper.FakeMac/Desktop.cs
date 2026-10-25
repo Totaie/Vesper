@@ -10,7 +10,8 @@ namespace Vesper.FakeMac;
 /// <summary>
 /// A synthetic macOS-looking desktop, rendered with GDI+ at the Mac's native pixel density times
 /// the viewer's requested server scale. It doubles as an input test bench: typed text, modifier
-/// keys, clicks, scrolls and clipboard pastes all show up on screen.
+/// keys, clicks, scrolls and clipboard pastes all show up on screen. Without GDI+ (on Linux) it
+/// paints a plainer scene straight into the frame: the same panels and changes, without text.
 /// </summary>
 public sealed class Desktop : IDisposable
 {
@@ -18,8 +19,8 @@ public sealed class Desktop : IDisposable
     private readonly int _pointsWidth, _pointsHeight;
     private readonly double _density;
     private readonly bool _animate;
-    private Bitmap _bitmap;
-    private Graphics _graphics;
+    private Bitmap? _bitmap;
+    private Graphics? _graphics;
     private double _scale = 1.0;
 
     // Scene state.
@@ -79,8 +80,8 @@ public sealed class Desktop : IDisposable
         {
             if (Math.Abs(scale - _scale) < 0.0001) return;
             _scale = scale;
-            _graphics.Dispose();
-            _bitmap.Dispose();
+            _graphics?.Dispose();
+            _bitmap?.Dispose();
             (_bitmap, _graphics) = CreateSurface();
             Frame = new byte[Width * Height * 4];
             RenderAll();
@@ -184,8 +185,10 @@ public sealed class Desktop : IDisposable
         foreach (var r in dirty) if (!r.IsEmpty) Changed?.Invoke(r);
     }
 
-    private (Bitmap, Graphics) CreateSurface()
+    private (Bitmap?, Graphics?) CreateSurface()
     {
+        // VESPER_FAKEMAC_PLAIN=1 tries the plain painter on Windows too.
+        if (!OperatingSystem.IsWindows() || Environment.GetEnvironmentVariable("VESPER_FAKEMAC_PLAIN") == "1") return (null, null);
         var bmp = new Bitmap(Width, Height, PixelFormat.Format32bppRgb);
         var g = Graphics.FromImage(bmp);
         g.SmoothingMode = SmoothingMode.AntiAlias;
@@ -205,8 +208,12 @@ public sealed class Desktop : IDisposable
                                (int)Math.Ceiling(points.Right * k) + 2, (int)Math.Ceiling(points.Bottom * k) + 2),
             new Rectangle(0, 0, Width, Height));
         if (px.IsEmpty) return px;
+        if (_graphics is not { } g || _bitmap is null)
+        {
+            PaintPlain(px, k);
+            return px;
+        }
 
-        var g = _graphics;
         g.ResetTransform();
         g.SetClip(px);
         g.ScaleTransform((float)k, (float)k);
@@ -226,6 +233,45 @@ public sealed class Desktop : IDisposable
             _bitmap.UnlockBits(data);
         }
         return px;
+    }
+
+    /// <summary>
+    /// The scene without GDI+: sky gradient, menu bar, the two windows, the clock, the animation
+    /// and the last click, each changing colour with the state GDI+ would have written as text.
+    /// </summary>
+    private void PaintPlain(Rectangle px, double k)
+    {
+        Rectangle Scaled(RectangleF r) => Rectangle.FromLTRB((int)(r.Left * k), (int)(r.Top * k), (int)(r.Right * k), (int)(r.Bottom * k));
+        var editor = Scaled(EditorWindow);
+        var info = Scaled(InfoWindow);
+        var clock = Scaled(ClockArea);
+        var bar = Scaled(AnimationArea);
+        int menu = (int)(MenuBar.Height * k);
+        int typed = _typed.Length, second = DateTime.Now.Second;
+        int infoShade = (_pointerX + _pointerY + (int)_scrollY + _clipboard.Length + _modifiers.Count * 7 + _lastKey.Length) & 63;
+        int barX = bar.Left + (_frame * 7 % Math.Max(1, bar.Width - 40));
+        var click = _lastClick is var (cx, cy)
+            ? new Rectangle((int)(cx / _density * k) - 12, (int)(cy / _density * k) - 12, 24, 24)
+            : Rectangle.Empty;
+        for (int y = px.Top; y < px.Bottom; y++)
+        {
+            int t = Height > 1 ? y * 255 / (Height - 1) : 0;
+            for (int x = px.Left; x < px.Right; x++)
+            {
+                (int r, int g, int b) = (14 + t * 226 / 255, 18 + t * 132 / 255, 52 + t * 44 / 255);
+                if (y < menu) (r, g, b) = (232, 232, 238);
+                if (clock.Contains(x, y)) (r, g, b) = (200, 200 + second, 210);
+                if (editor.Contains(x, y)) (r, g, b) = (248, 248 - (typed & 31), 250 - ((x / 8 + typed) & 15));
+                if (info.Contains(x, y)) (r, g, b) = (236 - infoShade, 238, 244);
+                if (_animate && bar.Contains(x, y) && x >= barX && x < barX + 40) (r, g, b) = (240, 150, 96);
+                if (click.Contains(x, y)) (r, g, b) = (255, 90, 90);
+                int i = (y * Width + x) * 4;
+                Frame[i] = (byte)b;
+                Frame[i + 1] = (byte)g;
+                Frame[i + 2] = (byte)r;
+                Frame[i + 3] = 0;
+            }
+        }
     }
 
     private void DrawScene(Graphics g)
@@ -395,8 +441,8 @@ public sealed class Desktop : IDisposable
 
     public void Dispose()
     {
-        _graphics.Dispose();
-        _bitmap.Dispose();
+        _graphics?.Dispose();
+        _bitmap?.Dispose();
     }
 
     private static class ControlPaint

@@ -1,7 +1,8 @@
-# Builds the portable Vesper zips: self-contained Release builds that run from any folder, with no
-# install and no .NET or Windows App SDK needed. One zip per platform, in .\dist, with SHA-256 sums.
-# Each unzips to a folder holding just Vesper.exe (a small launcher), Start here.txt, and an app
-# folder with the program itself. The launcher needs Visual Studio's C++ build tools.
+# Builds Vesper's Windows downloads into .\dist, for x64 and ARM64: an installer (Setup, per-user,
+# no administrator prompt) and a portable zip. Both are self-contained Release builds needing no
+# .NET or Windows App SDK, and both update themselves. Each portable zip unzips to a folder
+# holding just Vesper.exe (a small launcher), Start here.txt, and an app folder with the program.
+# Needs Visual Studio's C++ build tools (for the launcher) and Inno Setup 6 (for Setup).
 param(
     [ValidateSet('x64', 'ARM64')] [string[]] $Platforms = @('x64', 'ARM64')
 )
@@ -12,12 +13,20 @@ $version = ($props.Project.PropertyGroup | ForEach-Object { $_.Version } | Where
 $dist = Join-Path $root 'dist'
 New-Item -ItemType Directory -Force $dist | Out-Null
 
+$iscc = @(
+    (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'),
+    (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'),
+    (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe')
+) | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $iscc) { throw 'Inno Setup 6 is needed for the installers (winget install JRSoftware.InnoSetup).' }
+
 $readme = @"
 Vesper $version - Apple Remote Desktop for Windows
 ==================================================
 
 Portable: nothing to install. Extract this whole folder anywhere and run Vesper.exe.
 The "app" folder beside it is the program itself, so keep the two together.
+(Prefer an installed copy with a Start menu entry? Use the Vesper Setup download instead.)
 
 Requirements: Windows 10 version 2004 or later, or Windows 11. Pick the zip for your PC:
 win-x64 for Intel and AMD processors, win-arm64 for Snapdragon / ARM PCs.
@@ -37,7 +46,11 @@ Setting up the Mac
 Your Macs and settings are kept in %LOCALAPPDATA%\Vesper on this PC, and saved passwords are
 encrypted to your Windows account. To remove everything, delete Vesper's folder and that one.
 
-Vesper talks only to the Macs you add: no accounts, no telemetry, no update checks.
+Vesper keeps itself up to date: it checks its releases on GitHub twice a day, downloads a new
+version in the background and installs it the next time you restart or quit it, only if it's
+signed with Vesper's release key. You can turn this off in Settings > Updates.
+
+Vesper talks only to the Macs you add, and to GitHub for updates: no accounts, no telemetry.
 Licences for code Vesper ports are in app\THIRD-PARTY-NOTICES.md.
 "@
 
@@ -49,6 +62,7 @@ if ($LASTEXITCODE -ne 0) { throw "launcher build failed ($LASTEXITCODE)" }
 $sums = @()
 foreach ($platform in $Platforms) {
     $rid = if ($platform -eq 'ARM64') { 'win-arm64' } else { 'win-x64' }
+    $arch = if ($platform -eq 'ARM64') { 'arm64' } else { 'x64' }
     & (Join-Path $PSScriptRoot 'publish.ps1') -Platform $platform
     if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw "publish failed for $platform" }
 
@@ -80,9 +94,16 @@ foreach ($platform in $Platforms) {
     }
     Remove-Item $stage -Recurse -Force
 
-    $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-    $sums += "$hash  $name.zip"
-    Write-Host ("{0}: {1:N1} MB, SHA-256 {2}" -f "$name.zip", ((Get-Item $zip).Length / 1MB), $hash)
+    # The installer, from the same build.
+    & $iscc /Qp "/DAppVersion=$version" "/DArch=$arch" "/DPublishDir=$(Join-Path $root "publish\$rid")" "/DOutputDir=$dist" (Join-Path $root 'installer\Vesper.iss')
+    if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed for $platform ($LASTEXITCODE)" }
+    $setup = Join-Path $dist "Vesper-$version-Setup-$arch.exe"
+
+    foreach ($file in @($zip, $setup)) {
+        $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant()
+        $sums += "$hash  $(Split-Path $file -Leaf)"
+        Write-Host ("{0}: {1:N1} MB, SHA-256 {2}" -f (Split-Path $file -Leaf), ((Get-Item $file).Length / 1MB), $hash)
+    }
 }
 Set-Content -Path (Join-Path $dist 'SHA256SUMS.txt') -Value $sums -Encoding ascii
 Write-Host "Packaged to $dist"

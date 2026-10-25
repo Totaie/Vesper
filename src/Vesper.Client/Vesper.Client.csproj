@@ -9,6 +9,7 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Vesper.Core.Tests" />
+    <InternalsVisibleTo Include="Vesper.ReleaseTool" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Vesper.Core\Vesper.Core.csproj" />

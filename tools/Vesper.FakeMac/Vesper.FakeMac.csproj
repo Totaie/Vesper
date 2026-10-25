@@ -3,8 +3,11 @@
        it listens on loopback, and its "Mac" credentials are whatever you pass on the command line. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
+    <RuntimeIdentifiers>win-x64;linux-x64</RuntimeIdentifiers>
     <RootNamespace>Vesper.FakeMac</RootNamespace>
+    <!-- GDI+ (System.Drawing) is used only on Windows; elsewhere the desktop paints itself. -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>

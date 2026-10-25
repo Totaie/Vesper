@@ -24,6 +24,8 @@ VersionInfoVersion={#AppVersion}
 VersionInfoDescription=Vesper Setup
 DefaultDirName={localappdata}\Programs\Vesper
 DisableDirPage=yes
+; Always the same folder: the in-app updater and the clean slate below rely on it.
+UsePreviousAppDir=no
 DisableProgramGroupPage=yes
 DisableReadyPage=yes
 PrivilegesRequired=lowest

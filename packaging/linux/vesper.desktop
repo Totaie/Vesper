@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Vesper
+GenericName=Remote Desktop
+Comment=Fast, encrypted Apple Remote Desktop (macOS Screen Sharing) client
+Exec=vesper
+Icon=vesper
+Terminal=false
+Categories=Network;RemoteAccess;
+Keywords=Mac;Screen Sharing;ARD;VNC;remote desktop;
+StartupNotify=true

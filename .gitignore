@@ -19,3 +19,6 @@ fakemac-identity.pem
 
 # Screenshots taken while developing
 .screenshots/
+
+# Claude Code agent worktrees
+.claude/

@@ -1,0 +1,71 @@
+name: Linux
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  arch:
+    name: Arch Linux package
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    timeout-minutes: 45
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+      CI: 'true'
+    steps:
+      - name: System packages
+        run: |
+          pacman -Syu --noconfirm --needed base-devel git curl pacman-contrib namcap \
+            icu openssl zlib fontconfig freetype2 libx11 libice libsm libxrandr libxi libxcursor libxext \
+            ca-certificates libsecret gnome-keyring dbus xorg-server-xvfb imagemagick ttf-dejavu
+
+      - uses: actions/checkout@v4
+
+      - name: .NET SDK (the version global.json pins)
+        run: |
+          curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
+          bash /tmp/dotnet-install.sh --jsonfile global.json --install-dir /opt/dotnet
+          echo /opt/dotnet >> "$GITHUB_PATH"
+          echo DOTNET_ROOT=/opt/dotnet >> "$GITHUB_ENV"
+
+      - name: Tests on Linux (OpenSSL crypto, the login keyring, FakeMac's plain desktop)
+        run: |
+          dbus-run-session -- bash -c '
+            printf "ci-keyring" | gnome-keyring-daemon --unlock --components=secrets > /dev/null
+            VESPER_TEST_KEYRING=1 dotnet test tests/Vesper.Core.Tests -c Release'
+
+      - name: Build the package
+        run: |
+          useradd -m builder
+          chown -R builder "$GITHUB_WORKSPACE"
+          su builder -c "PATH=/opt/dotnet:\$PATH DOTNET_ROOT=/opt/dotnet CI=true bash packaging/arch/build.sh"
+
+      - name: Lint it
+        run: namcap dist/arch/vesper-*.pkg.tar.zst || true
+
+      - name: Install it with pacman
+        run: |
+          pacman -U --noconfirm dist/arch/vesper-*.pkg.tar.zst
+          pacman -Qi vesper
+          test -x /usr/bin/vesper
+
+      - name: Start it
+        run: |
+          dbus-run-session -- bash -c '
+            printf "ci-keyring" | gnome-keyring-daemon --unlock --components=secrets > /dev/null
+            xvfb-run -a -s "-screen 0 1600x1000x24" bash packaging/arch/smoke.sh "$GITHUB_WORKSPACE/dist/screenshots"'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vesper-arch
+          path: |
+            dist/arch/*.pkg.tar.zst
+            dist/arch/*.tar.gz
+            dist/screenshots/
+          if-no-files-found: error
