@@ -2,6 +2,9 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
 
+// Native calls in this library resolve from the system folder, never from beside the app.
+[assembly: DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+
 namespace Vesper.Security;
 
 /// <summary>
@@ -32,8 +35,15 @@ public interface IVaultKeyProtector
 [SupportedOSPlatform("windows")]
 public sealed unsafe partial class DpapiProtector : IVaultKeyProtector
 {
-    private static readonly byte[] Entropy = "Vesper vault v1"u8.ToArray();
     private const int UiForbidden = 0x1;
+    private readonly byte[] _entropy;
+
+    public DpapiProtector() : this("Vesper vault v1"u8)
+    {
+    }
+
+    /// <summary>A protector whose blobs only open with the same <paramref name="entropy"/> (a purpose label).</summary>
+    public DpapiProtector(ReadOnlySpan<byte> entropy) => _entropy = entropy.ToArray();
 
     public bool IsAvailable => true;
     public string UnavailableReason => "";
@@ -41,10 +51,10 @@ public sealed unsafe partial class DpapiProtector : IVaultKeyProtector
     public byte[] Protect(byte[] data)
     {
         fixed (byte* p = data)
-        fixed (byte* e = Entropy)
+        fixed (byte* e = _entropy)
         {
             var input = new DataBlob { Size = data.Length, Data = (nint)p };
-            var entropy = new DataBlob { Size = Entropy.Length, Data = (nint)e };
+            var entropy = new DataBlob { Size = _entropy.Length, Data = (nint)e };
             DataBlob output;
             if (!CryptProtectData(&input, 0, &entropy, 0, 0, UiForbidden, &output))
             {
@@ -64,10 +74,10 @@ public sealed unsafe partial class DpapiProtector : IVaultKeyProtector
     public byte[] Unprotect(byte[] data)
     {
         fixed (byte* p = data)
-        fixed (byte* e = Entropy)
+        fixed (byte* e = _entropy)
         {
             var input = new DataBlob { Size = data.Length, Data = (nint)p };
-            var entropy = new DataBlob { Size = Entropy.Length, Data = (nint)e };
+            var entropy = new DataBlob { Size = _entropy.Length, Data = (nint)e };
             DataBlob output;
             if (!CryptUnprotectData(&input, 0, &entropy, 0, 0, UiForbidden, &output))
             {

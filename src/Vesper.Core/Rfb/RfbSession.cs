@@ -941,9 +941,11 @@ public sealed class RfbSession : IAsyncDisposable
     /// </summary>
     public void SendScroll(double dxPoints, double dyPoints, PointerButtons held)
     {
-        if (!InputAllowed) return;
-        _scrollResidualX += dxPoints;
-        _scrollResidualY += dyPoints;
+        if (!InputAllowed || !double.IsFinite(dxPoints) || !double.IsFinite(dyPoints)) return;
+        // However far one gesture claims to go, a screenful or so at a time.
+        const double MaxPoints = 4000;
+        _scrollResidualX = Math.Clamp(_scrollResidualX + dxPoints, -MaxPoints, MaxPoints);
+        _scrollResidualY = Math.Clamp(_scrollResidualY + dyPoints, -MaxPoints, MaxPoints);
         if (SupportsPreciseScroll)
         {
             int dx = (int)_scrollResidualX, dy = (int)_scrollResidualY;

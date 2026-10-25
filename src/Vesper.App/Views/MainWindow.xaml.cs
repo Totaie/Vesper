@@ -8,6 +8,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Vesper.Models;
 using Vesper.Services;
+using Vesper.Updates;
 
 namespace Vesper.Views;
 
@@ -16,6 +17,7 @@ public sealed partial class MainWindow : Window
     private readonly ObservableCollection<MacCardItem> _macs = [];
     private readonly ObservableCollection<DiscoveredMac> _nearby = [];
     private MacDiscovery? _discovery;
+    private string? _dismissedUpdate;
 
     public MainWindow()
     {
@@ -28,14 +30,17 @@ public sealed partial class MainWindow : Window
         {
             if (e.WindowActivationState != WindowActivationState.Deactivated) UpdateGreeting();
         };
+        App.Current.Updates.Changed += OnUpdateChanged;
         Closed += (_, _) =>
         {
+            App.Current.Updates.Changed -= OnUpdateChanged;
             _discovery?.Dispose();
             App.Current.MainClosed();
         };
         ApplyTheme();
         Refresh();
         UpdateGreeting();
+        RefreshUpdateBar();
         if (App.Current.Data.Settings.FindMacsNearby) StartDiscovery();
         Root.Loaded += async (_, _) =>
         {
@@ -213,6 +218,60 @@ public sealed partial class MainWindow : Window
     }
 
     private void Settings_Click(object sender, RoutedEventArgs e) => SettingsWindow.Show();
+
+    private void OnUpdateChanged() => DispatcherQueue.TryEnqueue(RefreshUpdateBar);
+
+    private void RefreshUpdateBar()
+    {
+        var updates = App.Current.Updates;
+        if (updates.Offer is not { } offer || offer.Version == _dismissedUpdate
+            || updates.Status is not (UpdateStatus.Ready or UpdateStatus.Available))
+        {
+            UpdateBar.IsOpen = false;
+            return;
+        }
+        string summary = offer.Summary.Length > 0 ? offer.Summary + " " : "";
+        if (updates.Status == UpdateStatus.Ready)
+        {
+            UpdateBar.Title = $"Vesper {offer.Version} is ready";
+            UpdateBar.Message = summary + "It installs when you restart Vesper, or the next time you quit it.";
+            UpdateBarButton.Content = "Restart now";
+        }
+        else
+        {
+            UpdateBar.Title = $"Vesper {offer.Version} is available";
+            UpdateBar.Message = summary + "This copy of Vesper can't update itself; download the new version from its releases page.";
+            UpdateBarButton.Content = "Open releases page";
+        }
+        UpdateBar.IsOpen = true;
+    }
+
+    private void UpdateBar_Closed(InfoBar sender, object args) => _dismissedUpdate = App.Current.Updates.Offer?.Version;
+
+    private async void UpdateBar_Click(object sender, RoutedEventArgs e)
+    {
+        var updates = App.Current.Updates;
+        if (updates.Status != UpdateStatus.Ready)
+        {
+            await Windows.System.Launcher.LaunchUriAsync(UpdateService.ReleasesPage);
+            return;
+        }
+        int sessions = App.Current.Sessions.Count;
+        if (sessions > 0 && !await Dialogs.ConfirmAsync(Content.XamlRoot, "Restart Vesper now?",
+                sessions == 1 ? "Your Mac will be disconnected while Vesper updates." : $"Your {sessions} Macs will be disconnected while Vesper updates.",
+                "Restart and update"))
+        {
+            return;
+        }
+        try
+        {
+            await App.Current.RestartToUpdateAsync();
+        }
+        catch (Exception ex)
+        {
+            await Dialogs.InfoAsync(Content.XamlRoot, "Update not installed", ex.Message);
+        }
+    }
 
     private void Card_PointerEntered(object sender, PointerRoutedEventArgs e)
     {

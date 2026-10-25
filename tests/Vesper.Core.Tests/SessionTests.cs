@@ -321,7 +321,9 @@ public sealed class SessionTests : IAsyncLifetime
     // Opt-in, but the Mac has proven its key before: identity-key only (a missing type 33 is a downgrade).
     [InlineData(false, false, true, true, false, true, false, false, false)]
     // Straight to a Tailscale node: both; a refusal there is worth remembering.
-    [InlineData(false, true, false, true, false, true, true, true, true)]
+    [InlineData(false, true, false, false, false, true, true, true, true)]
+    // ...but a Mac whose identity key is known must use it: another tailnet node could answer for it.
+    [InlineData(false, true, false, true, false, true, false, false, true)]
     // A refusal learned over Tailscale: straight to the older sign-in there.
     [InlineData(false, true, false, false, true, false, true, false, true)]
     // ...but not on an open network, where it means nothing.
@@ -353,6 +355,17 @@ public sealed class SessionTests : IAsyncLifetime
     [InlineData("fd7a:115c:a1e1::1", false)]
     public void Only_tailscale_node_addresses_count_as_authenticated(string address, bool expected) =>
         Assert.Equal(expected, NetworkPath.IsTailscaleNodeAddress(IPAddress.Parse(address)));
+
+    [Theory]
+    [InlineData("100.101.102.103", true)]
+    [InlineData("studio.tail1234.ts.net", true)]
+    [InlineData("studio.tail1234.ts.net.", true)]
+    [InlineData("studio.local", false)]   // mDNS: any node on the tailnet could answer for it
+    [InlineData("studio", false)]         // LLMNR / search domains: likewise
+    [InlineData("192.168.1.20", false)]
+    [InlineData("100.100.100.100", false)]
+    public void Only_a_named_tailscale_node_counts_as_the_Mac(string host, bool expected) =>
+        Assert.Equal(expected, NetworkPath.NamesTailscaleNode(host));
 
     private sealed class HostKeyCheck(Func<SshHostKey, bool> decide) : IHostKeyVerifier
     {
@@ -408,6 +421,33 @@ public sealed class SessionTests : IAsyncLifetime
         await Task.Delay(200);
         await Assert.ThrowsAsync<IdentityRejectedException>(() =>
             SshTunnel.OpenAsync("127.0.0.1", sshPort, "vesper", "evening-star", new HostKeyCheck(_ => false), _cts.Token));
+        Assert.Empty(front.PasswordsReceived);
+    }
+
+    [Fact]
+    public async Task Ssh_tunnel_refuses_connections_the_Mac_asks_this_PC_to_make()
+    {
+        // A hostile Mac (or anyone holding a host key the user trusted) must not be able to use
+        // the tunnel to reach services on this PC's loopback or its network.
+        int rfbPort = StartServer();
+        int sshPort = FreePort();
+        using var front = new SshFront(_desktop, _serverOptions, rfbPort);
+        _ = front.StartAsync(sshPort, _cts.Token);
+        await Task.Delay(200);
+        var bait = new TcpListener(IPAddress.Loopback, 0);
+        bait.Start();
+        try
+        {
+            int baitPort = ((IPEndPoint)bait.LocalEndpoint).Port;
+            await using var tunnel = await SshTunnel.OpenAsync("127.0.0.1", sshPort, "vesper", "evening-star", new HostKeyCheck(_ => true), _cts.Token);
+            Assert.False(await front.TryReverseConnectAsync("127.0.0.1", baitPort, _cts.Token));
+            await Task.Delay(300);
+            Assert.False(bait.Pending());
+        }
+        finally
+        {
+            bait.Stop();
+        }
     }
 
     [Fact]

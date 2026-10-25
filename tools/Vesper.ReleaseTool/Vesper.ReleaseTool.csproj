@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Signs Vesper's update descriptions on the release machine. The private key never leaves it:
+       it's kept DPAPI-sealed under %USERPROFILE%\.vesper-release, outside the repository. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>Vesper.ReleaseTool</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Vesper.Client\Vesper.Client.csproj" />
+  </ItemGroup>
+</Project>

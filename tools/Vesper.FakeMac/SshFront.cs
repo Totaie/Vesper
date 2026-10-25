@@ -17,8 +17,40 @@ namespace Vesper.FakeMac;
 public sealed class SshFront(Desktop desktop, FakeMacOptions options, int rfbPort) : IDisposable
 {
     private SshServer? _server;
+    private readonly List<SshServerSession> _sessions = [];
 
     public string HostKeyFingerprint { get; private set; } = "";
+
+    /// <summary>Every password a client sent, right or wrong (for tests that must prove none was).</summary>
+    public List<string> PasswordsReceived { get; } = [];
+
+    /// <summary>
+    /// Acts like a hostile Mac: asks the client to open a TCP connection to <paramref name="host"/>
+    /// port <paramref name="port"/> on the client's side (a server-initiated direct-tcpip channel).
+    /// True if the client agreed.
+    /// </summary>
+    public async Task<bool> TryReverseConnectAsync(string host, int port, CancellationToken ct)
+    {
+        SshServerSession session;
+        lock (_sessions) session = _sessions.Last();
+        try
+        {
+            var request = new PortForwardChannelOpenMessage
+            {
+                ChannelType = "direct-tcpip",
+                Host = host,
+                Port = (uint)port,
+                OriginatorIPAddress = "127.0.0.1",
+                OriginatorPort = 4444,
+            };
+            using var channel = await session.OpenChannelAsync(request, null, ct);
+            return true;
+        }
+        catch (SshChannelException)
+        {
+            return false;
+        }
+    }
 
     public Task StartAsync(int port, CancellationToken ct)
     {
@@ -28,8 +60,16 @@ public sealed class SshFront(Desktop desktop, FakeMacOptions options, int rfbPor
         HostKeyFingerprint = "SHA256:" + Convert.ToBase64String(SHA256.HashData(hostKey.GetPublicKeyBytes(hostKey.KeyAlgorithmName).ToArray())).TrimEnd('=');
         _server.Credentials = new SshServerCredentials([hostKey]);
 
+        _server.SessionOpened += (_, session) =>
+        {
+            lock (_sessions) _sessions.Add(session);
+        };
         _server.SessionAuthenticating += (_, e) =>
         {
+            if (e.AuthenticationType == SshAuthenticationType.ClientPassword && e.Password is { } sent)
+            {
+                lock (PasswordsReceived) PasswordsReceived.Add(sent);
+            }
             if (e.AuthenticationType == SshAuthenticationType.ClientPassword && e.Username == options.Username && e.Password == options.Password)
             {
                 Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ssh: password accepted for \"{e.Username}\"");

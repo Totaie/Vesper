@@ -29,7 +29,12 @@ public sealed record CursorShape(int Width, int Height, int HotspotX, int Hotspo
 internal sealed class AppleCursorCache
 {
     private const int MaxShapes = 256;
+
+    /// <summary>A Mac's real pointers are small; a server filling the cache with 512² shapes is capped at this.</summary>
+    private const long MaxBytes = 32L << 20;
+
     private readonly Dictionary<uint, CursorShape> _shapes = [];
+    private long _bytes;
 
     /// <summary>Returns the shape to show, or null to leave the pointer as it is.</summary>
     public CursorShape? Accept(uint id, int hotX, int hotY, int width, int height, ReadOnlySpan<byte> deflated)
@@ -64,11 +69,14 @@ internal sealed class AppleCursorCache
             bgra[i * 4 + 3] = raw[pixels * 4 + i];
         }
         var shape = new CursorShape(width, height, Math.Clamp(hotX, 0, width - 1), Math.Clamp(hotY, 0, height - 1), bgra);
-        if (_shapes.Count >= MaxShapes && !_shapes.ContainsKey(id))
+        if (_shapes.Remove(id, out var replaced)) _bytes -= replaced.Bgra.Length;
+        if (_shapes.Count >= MaxShapes || _bytes + bgra.Length > MaxBytes)
         {
             _shapes.Clear();
+            _bytes = 0;
         }
         _shapes[id] = shape;
+        _bytes += bgra.Length;
         return shape;
     }
 

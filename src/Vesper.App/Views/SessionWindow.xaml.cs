@@ -136,12 +136,14 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         string? password = _password;
         _password = null;
         string? problem = null;
+        bool fromVault = false;
         if (password is null && _profile.HasSavedPassword && await UnlockVaultAsync())
         {
             switch (App.Current.Vault.TryGetPassword(_profile, out string saved))
             {
                 case VaultLookup.Found:
                     password = saved;
+                    fromVault = true;
                     _typedPassword = null;
                     break;
                 case VaultLookup.Mismatch:
@@ -168,7 +170,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         try
         {
             _fitTarget = FitTarget();
-            var connection = await App.Current.Connections.ConnectAsync(_profile, password, _fitTarget, this, progress, _cts.Token);
+            var connection = await App.Current.Connections.ConnectAsync(_profile, password, fromVault, _fitTarget, this, progress, _cts.Token);
             if (_closing)
             {
                 // The window closed while the last step finished: don't leave a session running.
@@ -189,6 +191,19 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
             await ConnectAsync();
             return;
         }
+        catch (SavedPasswordWithheldException e)
+        {
+            // The user trusted a changed key; the saved password isn't sent to it, so ask.
+            _typedPassword = await AskPasswordAsync(e.Message);
+            if (_typedPassword is null)
+            {
+                ShowProblem("Not connected", e.Message, retry: true);
+                return;
+            }
+            _password = _typedPassword.Value.Password;
+            await ConnectAsync();
+            return;
+        }
         catch (OperationCanceledException) when (_closing)
         {
             return;
@@ -198,7 +213,8 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
             // The Mac gave up on the half-finished sign-in while the trust prompt was being read.
             // The key was approved, so the next attempt goes straight through.
             Diagnostics.Add($"Connection to {_profile.Host} timed out during a trust prompt; retrying.");
-            _password = password;
+            // A saved password is fetched (and judged as saved) again, never passed on as typed.
+            _password = fromVault ? null : password;
             await ConnectAsync();
             return;
         }
@@ -993,6 +1009,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
     {
         bool on = ShieldToggle.IsChecked == true;
         ApplyCaptureProtection(on);
+        if (on && ShieldToggle.IsChecked != true) return; // refused, and already said so
         ShowNotice(on ? "Hidden from screenshots, screen recording, screen sharing and Recall." : "This window can now be captured.",
             InfoBarSeverity.Informational, quiet: true);
         Surface.Focus(FocusState.Programmatic);
@@ -1000,8 +1017,14 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
 
     private void ApplyCaptureProtection(bool on)
     {
-        Native.SetWindowDisplayAffinity(_hwnd, on ? Native.WDA_EXCLUDEFROMCAPTURE : Native.WDA_NONE);
-        ShieldToggle.IsChecked = on;
+        bool applied = Native.SetWindowDisplayAffinity(_hwnd, on ? Native.WDA_EXCLUDEFROMCAPTURE : Native.WDA_NONE);
+        ShieldToggle.IsChecked = on && applied;
+        if (on && !applied)
+        {
+            // Never show the shield as on when Windows didn't do it.
+            Diagnostics.Add("Windows refused to exclude a session window from screen capture.");
+            ShowNotice("Windows wouldn't hide this window from screen capture, so screenshots and screen sharing can see it.", InfoBarSeverity.Warning);
+        }
     }
 
     private void FullScreen_Click(object sender, RoutedEventArgs e) => SetFullScreen(!_fullScreen);

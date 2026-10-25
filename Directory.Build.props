@@ -8,10 +8,11 @@
     <Product>Vesper</Product>
     <Copyright>Copyright (c) 2026 Totaie</Copyright>
     <Version>0.1.1</Version>
-    <!-- Supply chain: restore must match the committed lock files, and known-vulnerable
-         packages (direct or transitive) fail the build. -->
+    <!-- Supply chain: restore must match the committed lock files (always in CI and for Release
+         builds, which is what's published), and known-vulnerable packages (direct or transitive)
+         fail the build. -->
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
-    <RestoreLockedMode Condition="'$(CI)' == 'true'">true</RestoreLockedMode>
+    <RestoreLockedMode Condition="'$(CI)' == 'true' or '$(Configuration)' == 'Release'">true</RestoreLockedMode>
     <NuGetAudit>true</NuGetAudit>
     <NuGetAuditMode>all</NuGetAuditMode>
     <NuGetAuditLevel>low</NuGetAuditLevel>

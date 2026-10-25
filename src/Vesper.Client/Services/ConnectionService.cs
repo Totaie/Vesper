@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Sockets;
 using Vesper.Core.Rfb;
 using Vesper.Core.Transport;
@@ -23,6 +24,14 @@ public enum SecurityLevel
 }
 
 public sealed record SecuritySummary(SecurityLevel Level, string Headline, string Detail);
+
+/// <summary>
+/// The Mac presented a different identity key (or SSH host key) from the one pinned, and the user
+/// accepted it, but the password on hand came from the vault. A saved password is sealed for the
+/// key it was saved with, so it isn't sent to a new one: the user types it this once instead.
+/// </summary>
+public sealed class SavedPasswordWithheldException() : Exception(
+    "This Mac's identity changed and you chose to trust the new one, so Vesper won't send the saved password to it without you. Type the password to continue.");
 
 /// <summary>Decisions only a person can make, asked on the UI thread.</summary>
 public interface ITrustPrompts
@@ -55,8 +64,12 @@ public sealed class ConnectedMac(RfbSession session, SshTunnel? tunnel, Socket s
 /// </summary>
 public sealed class ConnectionService(AppData data, SecretVault vault)
 {
+    /// <param name="passwordFromVault">
+    /// The password came from the vault rather than being typed for this connection: it's then
+    /// withheld from a Mac whose pinned key changed, even if the user accepts the new key.
+    /// </param>
     public async Task<ConnectedMac> ConnectAsync(
-        MacProfile profile, string password, (int Width, int Height) displayPixels, ITrustPrompts prompts,
+        MacProfile profile, string password, bool passwordFromVault, (int Width, int Height) displayPixels, ITrustPrompts prompts,
         IProgress<ConnectStage> progress, CancellationToken ct)
     {
         // Pins are saved from network threads; they're applied where the profile lives.
@@ -66,39 +79,60 @@ public sealed class ConnectionService(AppData data, SecretVault vault)
         if (profile.Transport == TransportMode.Ssh)
         {
             progress.Report(ConnectStage.SecuringTunnel);
-            tunnel = await SshTunnel.OpenAsync(profile.Host, profile.SshPort, profile.Username, password,
-                new SshPin(profile, prompts, this, ui), ct);
+            var sshPin = new SshPin(profile, prompts, this, ui, passwordFromVault);
+            try
+            {
+                tunnel = await SshTunnel.OpenAsync(profile.Host, profile.SshPort, profile.Username, password, sshPin, ct);
+            }
+            catch (IdentityRejectedException) when (sshPin.WithheldSavedPassword)
+            {
+                throw new SavedPasswordWithheldException();
+            }
         }
 
         try
         {
+            var identityPin = new IdentityPin(profile, prompts, this, ui, passwordFromVault);
             var (stream, socket, path) = await OpenTransportAsync(profile, tunnel, ct);
-            var policy = SignInPolicy.Decide(
-                insideSsh: tunnel is not null,
-                pathAuthenticatesMac: path.AuthenticatesPeer,
-                allowLegacySignIn: profile.AllowLegacySignIn,
-                identityPinned: profile.PinnedIdentityFingerprint is not null,
-                rsaRefusedBefore: profile.RsaSignInUnsupported);
+            var policy = Policy(profile, tunnel, path);
             Diagnostics.Add($"Connecting to {profile.Host} via {(tunnel is null ? path.Description : "SSH tunnel")}: " +
                 $"RSA {(policy.Auth.AllowRsa ? "yes" : "no")}, Diffie-Hellman {(policy.Auth.AllowDiffieHellman ? "yes" : "no")}");
 
             RfbSession session;
             try
             {
-                session = await StartSessionAsync(profile, password, displayPixels, prompts, progress, stream, path, policy, policy.Auth, ui, ct);
+                session = await StartSessionAsync(profile, password, displayPixels, identityPin, progress, stream, path, policy, policy.Auth, ct);
+            }
+            catch (IdentityRejectedException) when (identityPin.WithheldSavedPassword)
+            {
+                throw new SavedPasswordWithheldException();
             }
             catch (AuthenticationFailedException e) when (e.CredentialsRejected && e.Method == SignInMethod.AppleRsa && e.DiffieHellmanOffered && policy.RetryWithDiffieHellman)
             {
                 // A Mac reports a refused RSA login exactly like a wrong password. Where the older
-                // sign-in is allowed anyway, try it once with the same password.
+                // sign-in is allowed anyway, try it once with the same password, on a connection
+                // that goes to the same place and is judged afresh.
                 Diagnostics.Add($"RSA sign-in to {profile.Host} was refused; trying Apple's older sign-in once.");
+                var first = (socket.RemoteEndPoint as IPEndPoint)?.Address;
                 (stream, socket, path) = await OpenTransportAsync(profile, tunnel, ct);
-                session = await StartSessionAsync(profile, password, displayPixels, prompts, progress, stream, path, policy,
-                    new AuthPolicy(AllowRsa: false, AllowDiffieHellman: true), ui, ct);
-                if (policy.RememberRsaRefusal)
+                var retryPolicy = Policy(profile, tunnel, path);
+                bool moved = tunnel is null && !Equals(first, (socket.RemoteEndPoint as IPEndPoint)?.Address);
+                if (moved || !retryPolicy.Auth.AllowDiffieHellman)
                 {
-                    profile.RsaSignInUnsupported = true;
-                    Persist(profile, p => p.RsaSignInUnsupported = true);
+                    await stream.DisposeAsync();
+                    throw;
+                }
+                session = await StartSessionAsync(profile, password, displayPixels, identityPin, progress, stream, path, retryPolicy,
+                    new AuthPolicy(AllowRsa: false, AllowDiffieHellman: true), ct);
+                if (retryPolicy.RememberRsaRefusal)
+                {
+                    // Remembered only once the session proves itself: until then, whoever
+                    // answered could have staged the refusal.
+                    session.Secured += () => OnUi(ui, () =>
+                    {
+                        profile.RsaSignInUnsupported = true;
+                        Persist(profile, p => p.RsaSignInUnsupported = true);
+                    });
                 }
             }
             catch (SecurityRefusedException e) when (e.Reason == RefusalReason.OnlyUnverifiableSignIn && profile.PinnedIdentityFingerprint is not null)
@@ -106,7 +140,7 @@ public sealed class ConnectionService(AppData data, SecretVault vault)
                 throw new SecurityRefusedException(e.Reason,
                     "This Mac proved its identity on earlier connections, but this time it only offered Apple's older sign-in, which can't. " +
                     "That's what someone intercepting the connection would arrange, so Vesper stopped before sending your password. " +
-                    "If the Mac's sharing settings really changed, connect once through an SSH tunnel or Tailscale, or forget this Mac's identity from its menu.");
+                    "If the Mac's sharing settings really changed, connect once through an SSH tunnel, or forget this Mac's identity from its menu.");
             }
             return new ConnectedMac(session, tunnel, socket, Summarize(session.Info, path, tunnel));
         }
@@ -121,15 +155,22 @@ public sealed class ConnectionService(AppData data, SecretVault vault)
     {
         if (tunnel is not null)
         {
-            return (await tunnel.OpenStreamAsync(profile.Port, ct), tunnel.Socket, NetworkPath.Classify(tunnel.Socket));
+            return (await tunnel.OpenStreamAsync(profile.Port, ct), tunnel.Socket, NetworkPath.Classify(tunnel.Socket, profile.Host));
         }
         var socket = await TcpConnector.ConnectAsync(profile.Host, profile.Port, TimeSpan.FromSeconds(10), ct);
-        return (new NetworkStream(socket, ownsSocket: true), socket, NetworkPath.Classify(socket));
+        return (new NetworkStream(socket, ownsSocket: true), socket, NetworkPath.Classify(socket, profile.Host));
     }
 
-    private async Task<RfbSession> StartSessionAsync(
-        MacProfile profile, string password, (int Width, int Height) displayPixels, ITrustPrompts prompts, IProgress<ConnectStage> progress,
-        Stream stream, NetworkPath path, SignInPolicy policy, AuthPolicy auth, SynchronizationContext? ui, CancellationToken ct)
+    private static SignInPolicy Policy(MacProfile profile, SshTunnel? tunnel, NetworkPath path) => SignInPolicy.Decide(
+        insideSsh: tunnel is not null,
+        pathAuthenticatesMac: path.AuthenticatesPeer,
+        allowLegacySignIn: profile.AllowLegacySignIn,
+        identityPinned: profile.PinnedIdentityFingerprint is not null,
+        rsaRefusedBefore: profile.RsaSignInUnsupported);
+
+    private static async Task<RfbSession> StartSessionAsync(
+        MacProfile profile, string password, (int Width, int Height) displayPixels, IdentityPin identityPin, IProgress<ConnectStage> progress,
+        Stream stream, NetworkPath path, SignInPolicy policy, AuthPolicy auth, CancellationToken ct)
     {
         progress.Report(ConnectStage.VerifyingIdentity);
         var options = new RfbSessionOptions
@@ -138,7 +179,7 @@ public sealed class ConnectionService(AppData data, SecretVault vault)
             Password = password,
             Auth = auth,
             AllowUnencrypted = policy.AllowUnencrypted,
-            IdentityVerifier = new IdentityPin(profile, prompts, this, ui),
+            IdentityVerifier = identityPin,
             ViewOnly = profile.ViewOnly,
             ClipboardFromMac = profile.ShareClipboard,
             Color = profile.Quality,
@@ -247,12 +288,18 @@ public sealed class ConnectionService(AppData data, SecretVault vault)
     /// Trust on first use for the Mac's Screen Sharing identity key; a changed key needs the user.
     /// A trusted key is pinned only once the Mac has proven it holds it.
     /// </summary>
-    private sealed class IdentityPin(MacProfile profile, ITrustPrompts prompts, ConnectionService owner, SynchronizationContext? ui) : IMacIdentityVerifier
+    private sealed class IdentityPin(MacProfile profile, ITrustPrompts prompts, ConnectionService owner, SynchronizationContext? ui, bool passwordFromVault) : IMacIdentityVerifier
     {
+        /// <summary>The user trusted a changed key, but the password is a saved one: stopped before sending it.</summary>
+        public bool WithheldSavedPassword { get; private set; }
+
         public async ValueTask<bool> VerifyAsync(MacIdentity identity, CancellationToken ct)
         {
             string? pinned = profile.PinnedIdentityFingerprint;
-            return pinned == identity.Fingerprint || await prompts.TrustMacIdentityAsync(profile, identity, pinned);
+            if (pinned == identity.Fingerprint) return true;
+            if (!await prompts.TrustMacIdentityAsync(profile, identity, pinned)) return false;
+            WithheldSavedPassword = pinned is not null && passwordFromVault;
+            return !WithheldSavedPassword;
         }
 
         public void Proven(MacIdentity identity) => OnUi(ui, () =>
@@ -267,8 +314,11 @@ public sealed class ConnectionService(AppData data, SecretVault vault)
     /// The SSH host key. SSH's key exchange has already checked the host's signature by the time
     /// it's offered here, so a trusted key is pinned straight away, as OpenSSH does.
     /// </summary>
-    private sealed class SshPin(MacProfile profile, ITrustPrompts prompts, ConnectionService owner, SynchronizationContext? ui) : IHostKeyVerifier
+    private sealed class SshPin(MacProfile profile, ITrustPrompts prompts, ConnectionService owner, SynchronizationContext? ui, bool passwordFromVault) : IHostKeyVerifier
     {
+        /// <summary>The user trusted a changed host key, but the password is a saved one: stopped before sending it.</summary>
+        public bool WithheldSavedPassword { get; private set; }
+
         public async ValueTask<bool> VerifyAsync(SshHostKey key, CancellationToken ct)
         {
             string fingerprint = key.Fingerprint;
@@ -277,6 +327,11 @@ public sealed class ConnectionService(AppData data, SecretVault vault)
                 : null;
             if (pinnedFingerprint == fingerprint && profile.PinnedSshKeyAlgorithm == key.Algorithm) return true;
             if (!await prompts.TrustSshHostKeyAsync(profile, key, pinnedFingerprint)) return false;
+            if (pinnedFingerprint is not null && passwordFromVault)
+            {
+                WithheldSavedPassword = true;
+                return false;
+            }
             string blob = Convert.ToBase64String(key.Blob);
             OnUi(ui, () => owner.ChangeTrust(profile, p => { p.PinnedSshKeyAlgorithm = key.Algorithm; p.PinnedSshKey = blob; }));
             return true;

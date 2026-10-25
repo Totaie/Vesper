@@ -162,6 +162,12 @@
           "xunit.v3.runner.common": "[3.2.2]"
         }
       },
+      "vesper.client": {
+        "type": "Project",
+        "dependencies": {
+          "Vesper.Core": "[0.1.1, )"
+        }
+      },
       "vesper.core": {
         "type": "Project",
         "dependencies": {
@@ -173,7 +179,7 @@
         "type": "Project",
         "dependencies": {
           "System.Drawing.Common": "[10.0.12, )",
-          "Vesper.Core": "[0.1.0, )"
+          "Vesper.Core": "[0.1.1, )"
         }
       },
       "Microsoft.DevTunnels.Ssh": {

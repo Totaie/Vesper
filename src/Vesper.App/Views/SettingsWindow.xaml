@@ -135,9 +135,34 @@
                     <FontIcon Glyph="&#xE701;" FontSize="18" />
                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
                         <TextBlock Text="Find Macs on this network" Style="{StaticResource CardTitle}" />
-                        <TextBlock Style="{StaticResource CardDescription}" Text="Listens for Macs announcing Screen Sharing on the local network. Nothing is sent anywhere." />
+                        <TextBlock Style="{StaticResource CardDescription}" Text="Asks the local network (by multicast, which stays on it) for Macs offering Screen Sharing. Nothing goes beyond your network." />
                     </StackPanel>
                     <ToggleSwitch x:Name="DiscoverSwitch" AutomationProperties.Name="Find Macs on this network" Grid.Column="2" Toggled="Discover_Toggled" OnContent="" OffContent="" MinWidth="0" />
+                </Grid>
+
+                <TextBlock Text="Updates" Style="{StaticResource VesperSectionHeaderStyle}" Margin="2,18,0,6" />
+                <Grid Style="{StaticResource Card}">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <FontIcon Glyph="&#xE895;" FontSize="18" />
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="Update Vesper automatically" Style="{StaticResource CardTitle}" />
+                        <TextBlock Style="{StaticResource CardDescription}"
+                                   Text="Checks Vesper's releases on GitHub twice a day and downloads a new version in the background. It installs when you restart or quit Vesper, and only if it's signed with Vesper's release key." />
+                    </StackPanel>
+                    <ToggleSwitch x:Name="UpdatesSwitch" AutomationProperties.Name="Update Vesper automatically" Grid.Column="2" Toggled="Updates_Toggled" OnContent="" OffContent="" MinWidth="0" />
+                </Grid>
+                <Grid Style="{StaticResource Card}">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <FontIcon Glyph="&#xE72C;" FontSize="18" />
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock x:Name="UpdateTitle" Text="Vesper is up to date" Style="{StaticResource CardTitle}" />
+                        <TextBlock x:Name="UpdateDetail" Style="{StaticResource CardDescription}" />
+                        <ProgressBar x:Name="UpdateProgress" Maximum="1" Margin="0,6,0,0" Visibility="Collapsed" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <Button x:Name="RestartUpdateButton" Content="Restart to update" Style="{StaticResource AccentButtonStyle}" Click="RestartToUpdate_Click" Visibility="Collapsed" />
+                        <Button x:Name="CheckUpdatesButton" Content="Check now" Click="CheckUpdates_Click" />
+                    </StackPanel>
                 </Grid>
 
                 <TextBlock Text="About" Style="{StaticResource VesperSectionHeaderStyle}" Margin="2,18,0,6" />
@@ -153,7 +178,7 @@
                         <TextBlock Style="{StaticResource CardDescription}" TextWrapping="Wrap"
                                    Text="Named for the evening star: Hesperus to the Greeks, whose Hesperides kept the golden apples in a guarded garden at the edge of the world. Vesper speaks Apple's own Screen Sharing protocol (RFB 003.889) with its encrypted record layer, server-side scaling and pushed updates." />
                         <TextBlock Style="{StaticResource CardDescription}" TextWrapping="Wrap"
-                                   Text="No accounts, no telemetry, no update checks, no crash reports. Vesper connects only to the Macs you add. Its settings live in %LOCALAPPDATA%\Vesper, with passwords sealed by AES-256-GCM under a key protected by Windows." />
+                                   Text="No accounts, no telemetry, no crash reports. Vesper connects only to the Macs you add, and to GitHub to look for updates (unless you turn that off above). Its settings live in %LOCALAPPDATA%\Vesper, with passwords sealed by AES-256-GCM under a key protected by Windows." />
                         <Expander Header="Diagnostics (kept in memory only)" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                             <StackPanel Spacing="8">
                                 <TextBox x:Name="DiagnosticsBox" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="120" MaxHeight="300"

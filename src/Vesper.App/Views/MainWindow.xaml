@@ -63,6 +63,14 @@
                     </StackPanel>
                 </Grid>
 
+                <!-- A new version, downloaded and checked -->
+                <InfoBar x:Name="UpdateBar" IsOpen="False" Severity="Success" IsClosable="True" Margin="0,-14,0,-10"
+                         CloseButtonClick="UpdateBar_Closed">
+                    <InfoBar.ActionButton>
+                        <Button x:Name="UpdateBarButton" Click="UpdateBar_Click" />
+                    </InfoBar.ActionButton>
+                </InfoBar>
+
                 <!-- The Macs -->
                 <ItemsRepeater x:Name="MacsRepeater">
                     <ItemsRepeater.Layout>
@@ -220,7 +228,7 @@
                 <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center" Opacity="0.75" Margin="0,6,0,0">
                     <FontIcon Glyph="&#xEA18;" FontSize="14" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <TextBlock FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"
-                               Text="Private by design: Vesper talks only to the Macs you add. No accounts, no telemetry, no cloud." />
+                               Text="Private by design: Vesper talks only to the Macs you add, and to GitHub for its own updates. No accounts, no telemetry." />
                 </StackPanel>
             </StackPanel>
         </ScrollViewer>

@@ -6,8 +6,9 @@ namespace Vesper.Core.Rfb;
 ///
 /// Apple's RSA sign-in (type 33) proves the Mac's identity once its first encrypted record checks
 /// out. Apple's Diffie-Hellman sign-in (type 30) proves nothing about who answered, so it's only
-/// used where the path itself does (an SSH tunnel with a pinned host key, or straight to the
-/// Mac's own Tailscale address), or for a Mac the user explicitly allowed it for.
+/// used where the path itself does (an SSH tunnel with a pinned host key, or straight to a
+/// Tailscale node the user named), or for a Mac the user explicitly allowed it for, and never,
+/// outside SSH, for a Mac whose identity key Vesper already knows.
 /// </summary>
 public sealed record SignInPolicy(AuthPolicy Auth, bool RetryWithDiffieHellman, bool RememberRsaRefusal, bool AllowUnencrypted)
 {
@@ -20,10 +21,11 @@ public sealed record SignInPolicy(AuthPolicy Auth, bool RetryWithDiffieHellman, 
     {
         bool authenticated = insideSsh || pathAuthenticatesMac;
 
-        // Off an authenticated path, a Mac that has proven its identity key and then stops
-        // offering that sign-in looks exactly like an attacker stripping it, so the opt-in no
-        // longer applies to it.
-        bool diffieHellman = authenticated || (allowLegacySignIn && !identityPinned);
+        // A Mac that has proven its identity key and then stops offering that sign-in looks
+        // exactly like an attacker stripping it. Inside SSH the pinned host key still vouches for
+        // the Mac; a Tailscale address only proves which tailnet node answered, and any node on
+        // the tailnet could answer for the Mac's name. So once the key is known, only it counts.
+        bool diffieHellman = insideSsh || (!identityPinned && (pathAuthenticatesMac || allowLegacySignIn));
         var auth = !diffieHellman ? AuthPolicy.RsaOnly
             : authenticated && rsaRefusedBefore ? new AuthPolicy(AllowRsa: false, AllowDiffieHellman: true)
             : AuthPolicy.Any;

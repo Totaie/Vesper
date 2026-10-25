@@ -36,9 +36,11 @@ public sealed record NetworkPath(NetworkPathKind Kind, string Description)
     /// <summary>
     /// Classifies a connected socket by where it actually goes. Leaving through a VPN adapter isn't
     /// enough: a subnet route or exit node carries the traffic only part of the way. Only an
-    /// address that is itself a Tailscale node, reached through the Tailscale adapter, counts.
+    /// address that is itself a Tailscale node, reached through the Tailscale adapter, counts, and
+    /// only when the user named that node (its 100.x address, or its MagicDNS name under .ts.net):
+    /// a name like studio.local can be answered, over mDNS or LLMNR, by any node on the tailnet.
     /// </summary>
-    public static NetworkPath Classify(Socket socket)
+    public static NetworkPath Classify(Socket socket, string? requestedHost = null)
     {
         var remote = (socket.RemoteEndPoint as IPEndPoint)?.Address;
         var local = (socket.LocalEndPoint as IPEndPoint)?.Address;
@@ -53,7 +55,9 @@ public sealed record NetworkPath(NetworkPathKind Kind, string Description)
         }
         if (IsTailscaleNodeAddress(remote) && OnTailscaleAdapter(local))
         {
-            return new(NetworkPathKind.TailscalePeer, "Tailscale");
+            return requestedHost is null || NamesTailscaleNode(requestedHost)
+                ? new(NetworkPathKind.TailscalePeer, "Tailscale")
+                : new(NetworkPathKind.Internet, "Tailscale, by a name Tailscale doesn't vouch for");
         }
         return IsPrivate(remote)
             ? new(NetworkPathKind.LocalNetwork, "Local network")
@@ -81,6 +85,14 @@ public sealed record NetworkPath(NetworkPathKind Kind, string Description)
         bool via = b[6] == 0x0b && b[7] == 0x1a;                       // fd7a:115c:a1e0:b1a::/64
         bool serviceV6 = b.AsSpan(6, 9).IndexOfAnyExcept((byte)0) < 0 && b[15] == 0x53; // fd7a:115c:a1e0::53
         return !via && !serviceV6;
+    }
+
+    /// <summary>Whether a host as the user typed it names a Tailscale node itself.</summary>
+    public static bool NamesTailscaleNode(string host)
+    {
+        host = host.Trim().TrimEnd('.');
+        if (IPAddress.TryParse(host.Trim('[', ']'), out var literal)) return IsTailscaleNodeAddress(literal);
+        return host.EndsWith(".ts.net", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool OnTailscaleAdapter(IPAddress local)

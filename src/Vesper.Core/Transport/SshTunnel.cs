@@ -77,8 +77,23 @@ public sealed class SshTunnel : IAsyncDisposable
         var session = new SshClientSession(CreateConfiguration(), trace);
         SshHostKey? presented = null;
         bool trusted = false;
+        bool answeredPrompt = false;
 
-        session.Authenticating += (_, e) =>
+        // The tunnel only ever carries what Vesper opens. A channel the Mac opens (direct-tcpip,
+        // "connect to this address for me") would let a hostile Mac, or anyone holding a host key
+        // that was trusted, reach services on this PC's loopback or network through it.
+        var forwarding = session.ActivateService<PortForwardingService>();
+        forwarding.AcceptRemoteConnectionsForNonForwardedPorts = false;
+        forwarding.ForwardConnectionsToLocalPorts = false;
+        forwarding.AcceptLocalConnectionsForForwardedPorts = false;
+        session.ChannelOpening += (_, e) =>
+        {
+            if (!e.IsRemoteRequest) return;
+            e.FailureReason = SshChannelOpenFailureReason.AdministrativelyProhibited;
+            e.FailureDescription = "Vesper doesn't accept channels from the server.";
+        };
+
+        void OnAuthenticating(object? sender, SshAuthenticatingEventArgs e)
         {
             switch (e.AuthenticationType)
             {
@@ -87,15 +102,22 @@ public sealed class SshTunnel : IAsyncDisposable
                     presented = new SshHostKey(key.KeyAlgorithmName, key.GetPublicKeyBytes(key.KeyAlgorithmName).ToArray());
                     e.AuthenticationTask = VerifyAsync(presented);
                     break;
-                case SshAuthenticationType.ClientInteractive when e.InfoRequest is not null:
-                    // macOS's PAM asks "Password:" through keyboard-interactive.
+                case SshAuthenticationType.ClientInteractive when e.InfoRequest is not null && trusted:
+                    // macOS's PAM asks "Password:" through keyboard-interactive. The password
+                    // answers one hidden prompt, once; anything else gets an empty answer.
                     var response = new AuthenticationInfoResponseMessage();
-                    for (int i = 0; i < e.InfoRequest.Prompts.Count; i++) response.Responses.Add(password);
+                    foreach (var (_, echo) in e.InfoRequest.Prompts)
+                    {
+                        bool give = !echo && !answeredPrompt;
+                        answeredPrompt |= give;
+                        response.Responses.Add(give ? password : "");
+                    }
                     e.InfoResponse = response;
                     e.AuthenticationTask = Task.FromResult<ClaimsPrincipal?>(new ClaimsPrincipal());
                     break;
             }
-        };
+        }
+        session.Authenticating += OnAuthenticating;
 
         async Task<ClaimsPrincipal?> VerifyAsync(SshHostKey key)
         {
@@ -107,6 +129,8 @@ public sealed class SshTunnel : IAsyncDisposable
         {
             await session.ConnectAsync(network, ct).ConfigureAwait(false);
             bool ok = await session.AuthenticateAsync(new SshClientCredentials(username, password), ct).ConfigureAwait(false);
+            // Signed in or not, nothing should still be holding the password.
+            session.Authenticating -= OnAuthenticating;
             if (!ok)
             {
                 if (presented is null || !trusted)

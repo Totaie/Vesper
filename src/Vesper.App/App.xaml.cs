@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Vesper.Services;
+using Vesper.Updates;
 using Vesper.Views;
 
 namespace Vesper;
@@ -9,6 +10,7 @@ public partial class App : Application
     private MainWindow? _main;
     private DispatcherTimer? _lockTimer;
     private DateTime _lastSessionActivity = DateTime.Now;
+    private bool _installStarted;
 
     public App()
     {
@@ -39,6 +41,7 @@ public partial class App : Application
     internal AppData Data { get; } = new();
     internal SecretVault Vault { get; private set; } = null!;
     internal ConnectionService Connections { get; private set; } = null!;
+    internal UpdateService Updates { get; private set; } = null!;
     internal List<SessionWindow> Sessions { get; } = [];
 
     /// <summary>Something found at startup that the user needs to hear about, shown by the main window once.</summary>
@@ -49,6 +52,9 @@ public partial class App : Application
         Vault = new SecretVault(Data.VaultPath, new Security.DpapiProtector(), new WindowsHello()) { RequireHello = Data.Settings.RequireWindowsHello };
         CheckVault();
         Connections = new ConnectionService(Data, Vault);
+        Updates = new UpdateService(Data, typeof(App).Assembly.GetName().Version ?? new Version(0, 0, 0));
+        Updates.Start();
+        _ = Task.Run(UpdateInstaller.CleanUpAfterUpdate);
         _main = new MainWindow();
         _main.Activate();
 
@@ -101,7 +107,11 @@ public partial class App : Application
         _main.Activate();
     }
 
-    internal void MainClosed() => _main = null;
+    internal void MainClosed()
+    {
+        _main = null;
+        if (Sessions.Count == 0) InstallOnExit();
+    }
 
     internal void SessionOpened(SessionWindow window) => Sessions.Add(window);
 
@@ -110,6 +120,43 @@ public partial class App : Application
         Sessions.Remove(window);
         _lastSessionActivity = DateTime.Now;
         _main?.Refresh();
+        if (_main is null && Sessions.Count == 0) InstallOnExit();
+    }
+
+    /// <summary>Installs the downloaded update and quits; Vesper opens again on the new version.</summary>
+    internal async Task RestartToUpdateAsync()
+    {
+        if (Updates is not { Status: UpdateStatus.Ready, Offer: { } offer, DownloadedFile: { } file }) return;
+        _installStarted = true;
+        try
+        {
+            await UpdateInstaller.InstallAsync(offer, file, relaunch: true);
+        }
+        catch
+        {
+            _installStarted = false;
+            throw;
+        }
+        foreach (var session in Sessions.ToList()) session.Close();
+        Exit();
+    }
+
+    /// <summary>
+    /// Quitting with an update downloaded installs it, quietly, so the next start is the new
+    /// version. (On Windows nothing needs asking: Setup installs for this user only.)
+    /// </summary>
+    private void InstallOnExit()
+    {
+        if (_installStarted || Updates is not { Status: UpdateStatus.Ready, Offer: { } offer, DownloadedFile: { } file }) return;
+        _installStarted = true;
+        try
+        {
+            UpdateInstaller.InstallAsync(offer, file, relaunch: false).GetAwaiter().GetResult();
+        }
+        catch (Exception e)
+        {
+            Diagnostics.Add($"Couldn't install the update on exit: {e.Message}");
+        }
     }
 
     /// <summary>Applies the chosen theme to every open window.</summary>

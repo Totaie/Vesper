@@ -87,6 +87,19 @@ public sealed class MacProfile
     public string Address => Port == 5900 ? Host : $"{Host}:{Port}";
 
     public MacProfile Clone() => (MacProfile)MemberwiseClone();
+
+    /// <summary>Puts values read from macs.json back into range (ports, and choices from a menu).</summary>
+    public void Normalize()
+    {
+        if (Port is < 1 or > 65535) Port = 5900;
+        if (SshPort is < 1 or > 65535) SshPort = 22;
+        if (!Enum.IsDefined(Transport)) Transport = TransportMode.Direct;
+        if (!Enum.IsDefined(Quality)) Quality = ColorQuality.Adaptive;
+        if (!Enum.IsDefined(Codec)) Codec = CodecPreference.Auto;
+        if (!Enum.IsDefined(Resolution)) Resolution = ResolutionMode.MatchThisDisplay;
+        if (!Enum.IsDefined(Scaling)) Scaling = ViewScaling.Fit;
+        if (!Enum.IsDefined(Modifiers)) Modifiers = ModifierLayout.MacStyle;
+    }
 }
 
 public enum ShortcutCapture
@@ -121,6 +134,19 @@ public sealed class AppSettings
 
     /// <summary>A version the user chose to skip: Vesper doesn't offer it again (a newer one is offered).</summary>
     public string? SkippedVersion { get; set; }
+
+    /// <summary>
+    /// Brings values read from settings.json (which any program running as you can edit) back into
+    /// the ranges Vesper offers: an absurd scroll speed or lock delay mustn't hang a session or
+    /// keep saved passwords unlocked for ever.
+    /// </summary>
+    public void Normalize()
+    {
+        ScrollSpeed = double.IsFinite(ScrollSpeed) ? Math.Clamp(ScrollSpeed, 0.25, 3) : 1.0;
+        LockAfterMinutes = LockAfterMinutes is 5 or 15 or 60 or 480 ? LockAfterMinutes : 15;
+        if (!Enum.IsDefined(WindowsShortcuts)) WindowsShortcuts = ShortcutCapture.FullScreenOnly;
+        if (!Enum.IsDefined(Theme)) Theme = ThemeChoice.System;
+    }
 }
 
 [JsonSourceGenerationOptions(WriteIndented = true, UseStringEnumConverter = true)]

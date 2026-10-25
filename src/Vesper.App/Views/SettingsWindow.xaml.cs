@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Vesper.Models;
 using Vesper.Services;
+using Vesper.Updates;
 using Windows.ApplicationModel.DataTransfer;
 
 namespace Vesper.Views;
@@ -27,7 +28,12 @@ public sealed partial class SettingsWindow : Window
     {
         InitializeComponent();
         WindowChrome.Prepare(this, TitleBar, width: 900, height: 860, minWidth: 560, minHeight: 480);
-        Closed += (_, _) => s_open = null;
+        App.Current.Updates.Changed += OnUpdateChanged;
+        Closed += (_, _) =>
+        {
+            App.Current.Updates.Changed -= OnUpdateChanged;
+            s_open = null;
+        };
         Root.RequestedTheme = App.ThemeFor(Settings.Theme);
 
         CaptureSwitch.IsOn = Settings.HideSessionsFromCapture;
@@ -39,6 +45,8 @@ public sealed partial class SettingsWindow : Window
         ThemeBox.SelectedIndex = (int)Settings.Theme;
         StatsSwitch.IsOn = Settings.ShowConnectionStats;
         DiscoverSwitch.IsOn = Settings.FindMacsNearby;
+        UpdatesSwitch.IsOn = Settings.CheckForUpdates;
+        RefreshUpdate();
         VersionText.Text = $"Version {typeof(App).Assembly.GetName().Version?.ToString(3)} · .NET {Environment.Version}";
         DiagnosticsBox.Text = Diagnostics.Text.Length > 0 ? Diagnostics.Text : "Nothing recorded yet.";
         _loading = false;
@@ -156,10 +164,55 @@ public sealed partial class SettingsWindow : Window
         Save();
     }
 
+    private void Updates_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        Settings.CheckForUpdates = UpdatesSwitch.IsOn;
+        Save();
+    }
+
+    private async void CheckUpdates_Click(object sender, RoutedEventArgs e) => await App.Current.Updates.CheckAsync(manual: true);
+
+    private async void RestartToUpdate_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            await App.Current.RestartToUpdateAsync();
+        }
+        catch (Exception ex)
+        {
+            await Dialogs.InfoAsync(Content.XamlRoot, "Update not installed", ex.Message);
+        }
+    }
+
+    private void OnUpdateChanged() => DispatcherQueue.TryEnqueue(RefreshUpdate);
+
+    private void RefreshUpdate()
+    {
+        var u = App.Current.Updates;
+        string version = u.CurrentVersion.ToString(3);
+        string? offered = u.Offer?.Version;
+        (UpdateTitle.Text, UpdateDetail.Text) = u.Status switch
+        {
+            UpdateStatus.Checking => ("Checking for updates…", $"You have Vesper {version}."),
+            UpdateStatus.Downloading => ($"Downloading Vesper {offered}…", "It's checked against Vesper's release signature before it's used."),
+            UpdateStatus.Ready => ($"Vesper {offered} is ready to install", "It installs when you restart Vesper, or the next time you quit it."),
+            UpdateStatus.Available => ($"Vesper {offered} is available", "This copy can't update itself (it wasn't installed by Vesper's Setup or from the portable zip). Download it from the releases page."),
+            UpdateStatus.Failed => ("Couldn't check for updates", u.Error ?? ""),
+            UpdateStatus.UpToDate => ("Vesper is up to date", $"Version {version}" + (u.LastChecked is { } t ? $", checked at {t:HH:mm}." : ".")),
+            _ => ("Updates", $"You have Vesper {version}."),
+        };
+        UpdateProgress.Visibility = u.Status == UpdateStatus.Downloading ? Visibility.Visible : Visibility.Collapsed;
+        UpdateProgress.Value = u.Progress;
+        RestartUpdateButton.Visibility = u.Status == UpdateStatus.Ready ? Visibility.Visible : Visibility.Collapsed;
+        CheckUpdatesButton.IsEnabled = u.Status is not (UpdateStatus.Checking or UpdateStatus.Downloading);
+    }
+
     private void CopyDiagnostics_Click(object sender, RoutedEventArgs e)
     {
         var package = new DataPackage();
         package.SetText(Diagnostics.Text);
-        Clipboard.SetContent(package);
+        // It names your Macs: keep it out of clipboard history and cloud clipboard sync.
+        Clipboard.SetContentWithOptions(package, new ClipboardContentOptions { IsAllowedInHistory = false, IsRoamable = false });
     }
 }

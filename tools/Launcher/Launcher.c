@@ -13,6 +13,43 @@ static void Fail(const wchar_t *message)
     MessageBoxW(NULL, message, L"Vesper", MB_OK | MB_ICONERROR);
 }
 
+// A finished update waits in app.new: Vesper unpacks it there, checked, and marks it ready last.
+// Swap it in before starting Vesper. The old copy may still be quitting after asking for this,
+// so keep trying for a few seconds; if it never lets go, start the current version instead. The
+// old folder is renamed aside and Vesper deletes it once it's running.
+static void ApplyStagedUpdate(const wchar_t *root)
+{
+    static wchar_t current[PATH_CHARS], staged[PATH_CHARS], marker[PATH_CHARS], old[PATH_CHARS];
+    if (lstrlenW(root) + 48 >= PATH_CHARS) return;
+    lstrcpyW(current, root);
+    lstrcatW(current, L"app");
+    lstrcpyW(staged, root);
+    lstrcatW(staged, L"app.new");
+    lstrcpyW(marker, staged);
+    lstrcatW(marker, L"\\.vesper-ready");
+    if (GetFileAttributesW(marker) == INVALID_FILE_ATTRIBUTES) return;
+    wsprintfW(old, L"%sapp.old-%lu", root, GetTickCount());
+
+    for (int attempt = 0; attempt < 50; attempt++)
+    {
+        if (MoveFileExW(current, old, 0))
+        {
+            if (MoveFileExW(staged, current, 0))
+            {
+                lstrcpyW(marker, current);
+                lstrcatW(marker, L"\\.vesper-ready");
+                DeleteFileW(marker);
+            }
+            else
+            {
+                MoveFileExW(old, current, 0); // put the working copy back
+            }
+            return;
+        }
+        Sleep(200);
+    }
+}
+
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR arguments, int show)
 {
     (void)instance;
@@ -43,6 +80,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR arguments, int
         Fail(L"Vesper's folder path is too long.");
         return 1;
     }
+    ApplyStagedUpdate(folder);
     lstrcatW(folder, L"app\\");
     lstrcpyW(app, folder);
     lstrcatW(app, L"Vesper.exe");

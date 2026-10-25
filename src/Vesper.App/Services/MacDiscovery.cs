@@ -7,7 +7,8 @@ public sealed record DiscoveredMac(string Id, string Name, string Host, int Port
 
 /// <summary>
 /// Finds Macs advertising Screen Sharing (_rfb._tcp) on the local network, through Windows' own
-/// DNS-SD support. It only listens to local multicast announcements and opens no connections.
+/// DNS-SD support: Windows asks the local network by multicast (mDNS, which never leaves it) and
+/// listens for answers. No connection is opened to anything it finds.
 /// </summary>
 internal sealed class MacDiscovery : IDisposable
 {

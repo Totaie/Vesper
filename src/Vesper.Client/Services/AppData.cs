@@ -26,6 +26,8 @@ public sealed class AppData
         CreatePrivateDirectory(Directory);
         Profiles = Load(ProfilesPath, VesperJson.Default.ListMacProfile) ?? [];
         Settings = Load(SettingsPath, VesperJson.Default.AppSettings) ?? new AppSettings();
+        Settings.Normalize();
+        foreach (var profile in Profiles) profile.Normalize();
     }
 
     public string Directory { get; }
