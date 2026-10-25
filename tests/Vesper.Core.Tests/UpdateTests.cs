@@ -137,10 +137,12 @@ public sealed class UpdateTests : IDisposable
     }
 
     [Theory]
-    [InlineData("Vesper-0.9.0-win-x64/app/../../evil.txt")]
-    [InlineData("Vesper-0.9.0-win-x64/app/C:/evil.txt")]
-    public void A_portable_update_cant_write_outside_its_folder(string entry)
+    [InlineData("Vesper-0.9.0-win-x64/app/../../evil.txt", false)]
+    [InlineData("Vesper-0.9.0-win-x64/app/C:/evil.txt", true)]   // a drive is only a root on Windows
+    [InlineData("Vesper-0.9.0-win-x64/app//tmp/evil.txt", false)]
+    public void A_portable_update_cant_write_outside_its_folder(string entry, bool windowsOnly)
     {
+        Assert.SkipWhen(windowsOnly && !OperatingSystem.IsWindows(), "Drive letters are paths only on Windows");
         string root = Path.Combine(_folder, "portable-evil");
         Directory.CreateDirectory(Path.Combine(root, "app"));
         string zip = Zip(("Vesper-0.9.0-win-x64/app/Vesper.exe", "app"), (entry, "evil"));

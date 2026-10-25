@@ -25,6 +25,11 @@ jobs:
             icu openssl zlib fontconfig freetype2 libx11 libice libsm libxrandr libxi libxcursor libxext \
             ca-certificates libsecret gnome-keyring dbus xorg-server-xvfb imagemagick ttf-dejavu
 
+      - name: Let gnome-keyring run in a container
+        # It drops file capabilities it was given (cap_ipc_lock) at start, which a container's
+        # bounding set doesn't allow; without them it just can't lock its memory.
+        run: setcap -r /usr/bin/gnome-keyring-daemon || true
+
       - uses: actions/checkout@v4
 
       - name: .NET SDK (the version global.json pins)
