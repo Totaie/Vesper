@@ -25,12 +25,12 @@ jobs:
             icu openssl zlib fontconfig freetype2 libx11 libice libsm libxrandr libxi libxcursor libxext \
             ca-certificates libsecret gnome-keyring dbus xorg-server-xvfb imagemagick ttf-dejavu
 
-      - name: Let gnome-keyring run in a container
-        # It drops file capabilities it was given (cap_ipc_lock) at start, which a container's
-        # bounding set doesn't allow; without them it just can't lock its memory.
-        run: setcap -r /usr/bin/gnome-keyring-daemon || true
-
       - uses: actions/checkout@v4
+
+      - name: An ordinary user to build and run as (makepkg and gnome-keyring refuse root)
+        run: |
+          useradd -m builder
+          chown -R builder "$GITHUB_WORKSPACE"
 
       - name: .NET SDK (the version global.json pins)
         run: |
@@ -40,16 +40,10 @@ jobs:
           echo DOTNET_ROOT=/opt/dotnet >> "$GITHUB_ENV"
 
       - name: Tests on Linux (OpenSSL crypto, the login keyring, FakeMac's plain desktop)
-        run: |
-          dbus-run-session -- bash -c '
-            printf "ci-keyring" | gnome-keyring-daemon --unlock --components=secrets > /dev/null
-            VESPER_TEST_KEYRING=1 dotnet test tests/Vesper.Core.Tests -c Release'
+        run: su builder -c "PATH=/opt/dotnet:\$PATH DOTNET_ROOT=/opt/dotnet CI=true VESPER_TEST_KEYRING=1 bash packaging/arch/ci-session.sh dotnet test tests/Vesper.Core.Tests -c Release"
 
       - name: Build the package
-        run: |
-          useradd -m builder
-          chown -R builder "$GITHUB_WORKSPACE"
-          su builder -c "PATH=/opt/dotnet:\$PATH DOTNET_ROOT=/opt/dotnet CI=true bash packaging/arch/build.sh"
+        run: su builder -c "PATH=/opt/dotnet:\$PATH DOTNET_ROOT=/opt/dotnet CI=true bash packaging/arch/build.sh"
 
       - name: Lint it
         run: namcap dist/arch/vesper-*.pkg.tar.zst || true
@@ -61,10 +55,7 @@ jobs:
           test -x /usr/bin/vesper
 
       - name: Start it
-        run: |
-          dbus-run-session -- bash -c '
-            printf "ci-keyring" | gnome-keyring-daemon --unlock --components=secrets > /dev/null
-            xvfb-run -a -s "-screen 0 1600x1000x24" bash packaging/arch/smoke.sh "$GITHUB_WORKSPACE/dist/screenshots"'
+        run: su builder -c "bash packaging/arch/ci-session.sh xvfb-run -a -s '-screen 0 1600x1000x24' bash packaging/arch/smoke.sh $GITHUB_WORKSPACE/dist/screenshots"
 
       - uses: actions/upload-artifact@v4
         with:
