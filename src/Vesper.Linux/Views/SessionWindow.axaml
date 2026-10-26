@@ -1,0 +1,185 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:v="using:Vesper.Linux.Views"
+        xmlns:c="using:Vesper.Linux.Controls"
+        xmlns:r="using:Vesper.Linux.Rendering"
+        x:Class="Vesper.Linux.Views.SessionWindow"
+        Title="Vesper"
+        Icon="/Assets/Vesper-256.png"
+        Width="1440" Height="900" MinWidth="640" MinHeight="420"
+        WindowStartupLocation="CenterScreen">
+
+    <Panel>
+        <Grid x:Name="Root" RowDefinitions="46,*">
+
+            <!-- Toolbar: the Mac, how it's secured, and the session controls. -->
+            <Grid x:Name="TitleBarArea" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="4">
+                <StackPanel Orientation="Horizontal" Spacing="10" Margin="16,0,8,0" VerticalAlignment="Center">
+                    <Path Width="13" Height="13" Stretch="Uniform" Fill="{StaticResource VesperStarFillBrush}"
+                          Data="{StaticResource VesperStarGeometry}" VerticalAlignment="Center" />
+                    <TextBlock x:Name="MacName" Classes="strong" VerticalAlignment="Center" />
+                    <Button x:Name="SecurityPill" Padding="9,3,11,3" CornerRadius="11" BorderThickness="0" Height="26"
+                            Background="{DynamicResource VesperPillBackgroundBrush}" IsVisible="False" VerticalAlignment="Center"
+                            AutomationProperties.Name="Connection security">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <c:Icon x:Name="SecurityIcon" Data="{x:Static c:Icons.Lock}" Size="12" VerticalAlignment="Center" />
+                            <TextBlock x:Name="SecurityText" FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <Button.Flyout>
+                            <Flyout Placement="BottomEdgeAlignedLeft">
+                                <StackPanel MaxWidth="360" Spacing="10">
+                                    <TextBlock x:Name="SecurityFlyoutTitle" Classes="strong" />
+                                    <TextBlock x:Name="SecurityFlyoutDetail" Classes="secondary wrap" />
+                                    <SelectableTextBlock x:Name="SecurityFlyoutIdentity" Classes="mono wrap" FontSize="12" />
+                                </StackPanel>
+                            </Flyout>
+                        </Button.Flyout>
+                    </Button>
+                </StackPanel>
+
+                <TextBlock x:Name="StatsText" Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,10,0"
+                           FontSize="11" Classes="mono" Opacity="0.6" IsVisible="False" />
+
+                <StackPanel x:Name="Toolbar" Grid.Column="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center" Margin="0,0,8,0">
+                    <DropDownButton x:Name="ViewButton" Classes="toolbar" ToolTip.Tip="Display" AutomationProperties.Name="Display options">
+                        <c:Icon Data="{x:Static c:Icons.Display}" Size="16" />
+                        <DropDownButton.Flyout>
+                            <MenuFlyout Placement="BottomEdgeAlignedRight" Opening="ViewMenu_Opening">
+                                <MenuItem x:Name="FitItem" Header="Fit to window" ToggleType="Radio" GroupName="scaling" Click="Scaling_Click" Tag="Fit" />
+                                <MenuItem x:Name="ActualItem" Header="Actual size (1:1 pixels)" ToggleType="Radio" GroupName="scaling" Click="Scaling_Click" Tag="ActualSize" />
+                                <Separator />
+                                <MenuItem x:Name="MatchItem" Header="Resolution: match this display" ToggleType="Radio" GroupName="resolution" Click="Resolution_Click" Tag="Match" />
+                                <MenuItem x:Name="NativeItem" Header="Resolution: every native pixel" ToggleType="Radio" GroupName="resolution" Click="Resolution_Click" Tag="Native" />
+                                <Separator />
+                                <MenuItem x:Name="AdaptiveItem" Header="Adaptive (fastest)" ToggleType="Radio" GroupName="color" Click="Color_Click" Tag="Adaptive" />
+                                <MenuItem x:Name="FullColorItem" Header="Full colour, lossless" ToggleType="Radio" GroupName="color" Click="Color_Click" Tag="Full" />
+                                <MenuItem x:Name="ThousandsItem" Header="Thousands of colours" ToggleType="Radio" GroupName="color" Click="Color_Click" Tag="Thousands" />
+                                <MenuItem x:Name="GrayItem" Header="Greyscale" ToggleType="Radio" GroupName="color" Click="Color_Click" Tag="Grayscale" />
+                                <Separator x:Name="DisplaysSeparator" IsVisible="False" />
+                                <MenuItem x:Name="DisplaysMenu" Header="Show display" IsVisible="False" />
+                            </MenuFlyout>
+                        </DropDownButton.Flyout>
+                    </DropDownButton>
+
+                    <ToggleButton x:Name="ClipboardToggle" Classes="toolbar" Click="Clipboard_Click"
+                                  ToolTip.Tip="Share clipboard" AutomationProperties.Name="Share clipboard">
+                        <c:Icon Data="{x:Static c:Icons.Clipboard}" Size="16" />
+                    </ToggleButton>
+
+                    <DropDownButton x:Name="KeysButton" Classes="toolbar" ToolTip.Tip="Keyboard" AutomationProperties.Name="Keyboard">
+                        <c:Icon Data="{x:Static c:Icons.Keyboard}" Size="16" />
+                        <DropDownButton.Flyout>
+                            <MenuFlyout Placement="BottomEdgeAlignedRight" Opening="KeysMenu_Opening">
+                                <MenuItem Header="Spotlight  (⌘ Space)" Tag="spotlight" Click="Shortcut_Click" />
+                                <MenuItem Header="Switch apps  (⌘ Tab)" Tag="apps" Click="Shortcut_Click" />
+                                <MenuItem Header="Mission Control  (⌃ ↑)" Tag="mission" Click="Shortcut_Click" />
+                                <MenuItem Header="Force Quit…  (⌥ ⌘ Esc)" Tag="forcequit" Click="Shortcut_Click" />
+                                <MenuItem Header="Screenshot  (⇧ ⌘ 4)" Tag="screenshot" Click="Shortcut_Click" />
+                                <MenuItem Header="Lock screen  (⌃ ⌘ Q)" Tag="lock" Click="Shortcut_Click" />
+                                <Separator />
+                                <MenuItem x:Name="MacStyleItem" Header="Ctrl is ⌘ Command (Mac style)" ToggleType="CheckBox" Click="MacStyle_Click" />
+                            </MenuFlyout>
+                        </DropDownButton.Flyout>
+                    </DropDownButton>
+
+                    <Button x:Name="FullScreenButton" Classes="toolbar" Click="FullScreen_Click"
+                            ToolTip.Tip="Full screen (Ctrl+Alt+Enter)" AutomationProperties.Name="Full screen">
+                        <c:Icon x:Name="FullScreenIcon" Data="{x:Static c:Icons.FullScreen}" Size="16" />
+                    </Button>
+
+                    <Button x:Name="DisconnectButton" Classes="toolbar" Click="Disconnect_Click" Margin="2,0,0,0"
+                            ToolTip.Tip="Disconnect" AutomationProperties.Name="Disconnect">
+                        <c:Icon Data="{x:Static c:Icons.Power}" Size="16" Classes="danger" StrokeThickness="1.7" />
+                    </Button>
+                </StackPanel>
+            </Grid>
+
+            <!-- The Mac's screen -->
+            <r:SessionView x:Name="Surface" Grid.Row="1" />
+
+            <!-- Full-screen toolbar, revealed at the top edge -->
+            <Border x:Name="FloatingBar" Grid.Row="1" VerticalAlignment="Top" HorizontalAlignment="Center" Margin="0,8,0,0"
+                    Padding="12,6" CornerRadius="12" IsVisible="False"
+                    Background="{DynamicResource VesperFloatingBrush}" BorderBrush="{DynamicResource VesperDialogStrokeBrush}" BorderThickness="1"
+                    BoxShadow="0 8 24 0 #55000000" PointerExited="FloatingBar_PointerExited">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <Path Width="12" Height="12" Stretch="Uniform" Fill="{StaticResource VesperStarFillBrush}" VerticalAlignment="Center"
+                          Data="{StaticResource VesperStarGeometry}" />
+                    <TextBlock x:Name="FloatingName" Classes="strong" VerticalAlignment="Center" />
+                    <c:Icon x:Name="FloatingSecurityIcon" Data="{x:Static c:Icons.Lock}" Size="12" VerticalAlignment="Center" />
+                    <Button Classes="toolbar" Click="FullScreen_Click" ToolTip.Tip="Leave full screen (Ctrl+Alt+Enter)">
+                        <c:Icon Data="{x:Static c:Icons.ExitFullScreen}" Size="15" />
+                    </Button>
+                    <Button Classes="toolbar" Click="Disconnect_Click" ToolTip.Tip="Disconnect">
+                        <c:Icon Data="{x:Static c:Icons.Power}" Size="15" Classes="danger" StrokeThickness="1.7" />
+                    </Button>
+                </StackPanel>
+            </Border>
+
+            <!-- Connecting / problems -->
+            <Panel x:Name="Overlay" Grid.Row="1" Background="{DynamicResource VesperWindowBrush}">
+                <Border Width="460" VerticalAlignment="Center" HorizontalAlignment="Center" CornerRadius="16" BorderThickness="1"
+                        Background="{DynamicResource VesperCardBrush}" BorderBrush="{DynamicResource VesperCardStrokeBrush}"
+                        ClipToBounds="True" BoxShadow="0 12 40 0 #33000000">
+                    <Grid RowDefinitions="170,Auto">
+                        <Panel Background="{StaticResource VesperSkyBrush}">
+                            <Path Width="10" Height="10" Stretch="Uniform" HorizontalAlignment="Right" VerticalAlignment="Top"
+                                  Margin="0,22,40,0" Fill="#E8FFF1D2" Data="{StaticResource VesperStarGeometry}" />
+                            <Ellipse Width="2" Height="2" Fill="#99FFFFFF" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="48,30,0,0" />
+                            <Ellipse Width="1.5" Height="1.5" Fill="#77FFFFFF" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="118,16,0,0" />
+                            <c:MacArt Height="118" Margin="0,24,0,0" />
+                        </Panel>
+                        <StackPanel Grid.Row="1" Margin="28,22,28,24" Spacing="16">
+                            <StackPanel Spacing="4">
+                                <TextBlock x:Name="OverlayTitle" Classes="display wrap" FontSize="26" />
+                                <SelectableTextBlock x:Name="OverlayMessage" Classes="secondary wrap" IsVisible="False" />
+                            </StackPanel>
+                            <ItemsControl x:Name="StepsList">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Spacing="10" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="v:StepItem">
+                                        <Grid ColumnDefinitions="20,*" ColumnSpacing="12" Opacity="{Binding Opacity}">
+                                            <c:Spinner Width="16" Height="16" IsVisible="{Binding IsActive}" />
+                                            <c:Icon Data="{x:Static c:Icons.Check}" Size="14" StrokeThickness="1.8" Classes="verified" IsVisible="{Binding IsDone}" />
+                                            <Ellipse Width="6" Height="6" Fill="{DynamicResource VesperTextTertiaryBrush}" IsVisible="{Binding IsPending}" />
+                                            <TextBlock Grid.Column="1" Text="{Binding Text}" VerticalAlignment="Center" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                                <Button x:Name="RetryButton" Content="Try again" Classes="accent" Click="Retry_Click" IsVisible="False" />
+                                <Button x:Name="EditButton" Content="Edit Mac" Click="EditMac_Click" IsVisible="False" />
+                                <Button x:Name="CancelButton" Content="Cancel" Click="Disconnect_Click" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </Panel>
+
+            <!-- Quiet notices -->
+            <Border x:Name="Notice" Grid.Row="1" Classes="notice" VerticalAlignment="Bottom" HorizontalAlignment="Center"
+                    Margin="24,0,24,24" MaxWidth="560" IsVisible="False" Opacity="0">
+                <Border.Transitions>
+                    <Transitions>
+                        <DoubleTransition Property="Opacity" Duration="0:0:0.2" />
+                    </Transitions>
+                </Border.Transitions>
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                    <c:Icon x:Name="NoticeIcon" Data="{x:Static c:Icons.Info}" Size="16" VerticalAlignment="Center" />
+                    <TextBlock x:Name="NoticeText" Grid.Column="1" Classes="wrap" VerticalAlignment="Center" />
+                    <Button Grid.Column="2" Classes="toolbar" Height="28" MinWidth="28" Padding="6" Click="NoticeClose_Click"
+                            ToolTip.Tip="Close" AutomationProperties.Name="Close notice">
+                        <c:Icon Data="{x:Static c:Icons.Close}" Size="12" />
+                    </Button>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <v:DialogLayer x:Name="Layer" />
+    </Panel>
+</Window>

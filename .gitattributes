@@ -1,6 +1,7 @@
 * text=auto eol=lf
 *.cs text eol=crlf
 *.xaml text eol=crlf
+*.axaml text eol=crlf
 *.csproj text eol=crlf
 *.props text eol=crlf
 *.slnx text eol=crlf

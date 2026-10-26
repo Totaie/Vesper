@@ -5,6 +5,10 @@
     <PackageVersion Include="Microsoft.DevTunnels.Ssh" Version="3.12.42" />
     <PackageVersion Include="Microsoft.DevTunnels.Ssh.Tcp" Version="3.12.42" />
     <PackageVersion Include="System.Drawing.Common" Version="10.0.12" />
+    <PackageVersion Include="Avalonia" Version="12.1.4" />
+    <PackageVersion Include="Avalonia.Desktop" Version="12.1.4" />
+    <PackageVersion Include="Avalonia.Themes.Fluent" Version="12.1.4" />
+    <PackageVersion Include="Avalonia.Fonts.Inter" Version="12.1.4" />
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />

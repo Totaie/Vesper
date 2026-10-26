@@ -1,0 +1,145 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Vesper.Linux.Controls"
+             x:Class="Vesper.Linux.Views.MacEditor"
+             Width="560">
+    <UserControl.Styles>
+        <Style Selector="TextBlock.label">
+            <Setter Property="Margin" Value="0,0,0,6" />
+        </Style>
+        <Style Selector="TextBlock.hint">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Foreground" Value="{DynamicResource VesperTextSecondaryBrush}" />
+        </Style>
+        <Style Selector="Expander">
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        </Style>
+        <Style Selector="ComboBox">
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+        </Style>
+    </UserControl.Styles>
+
+    <StackPanel Spacing="16">
+        <TextBlock x:Name="Intro" Classes="secondary wrap"
+                   Text="Vesper signs in with your Mac account, the same one you use at the Mac." />
+
+        <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="12">
+            <StackPanel>
+                <TextBlock Classes="label" Text="Name" />
+                <TextBox x:Name="NameBox" PlaceholderText="Studio" TextChanged="Field_Changed" />
+            </StackPanel>
+            <StackPanel Grid.Column="1">
+                <TextBlock Classes="label" Text="Address" />
+                <TextBox x:Name="HostBox" PlaceholderText="studio.local or 192.168.1.20" TextChanged="Field_Changed" />
+            </StackPanel>
+            <StackPanel Grid.Row="1">
+                <TextBlock Classes="label" Text="Mac account" />
+                <TextBox x:Name="UserBox" PlaceholderText="Your short user name" TextChanged="Field_Changed" />
+            </StackPanel>
+            <StackPanel Grid.Row="1" Grid.Column="1">
+                <TextBlock Classes="label" Text="Password" />
+                <TextBox x:Name="PasswordBox" PasswordChar="•" Classes="revealPasswordButton" />
+            </StackPanel>
+        </Grid>
+        <CheckBox x:Name="RememberBox" Content="Remember the password on this computer (encrypted)" IsChecked="True" />
+        <Border x:Name="NoVaultNote" Classes="notice inline" IsVisible="False">
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                <c:Icon x:Name="NoticeIcon" Data="{x:Static c:Icons.Info}" Size="16" VerticalAlignment="Top" Margin="0,1,0,0" />
+                <TextBlock x:Name="NoVaultText" Grid.Column="1" Classes="wrap" FontSize="13" />
+            </Grid>
+        </Border>
+
+        <StackPanel Spacing="8">
+            <TextBlock Text="Connection" Classes="strong" />
+            <RadioButton x:Name="DirectChoice" GroupName="transport" IsCheckedChanged="Transport_Changed"
+                         AutomationProperties.Name="Apple encrypted (recommended)">
+                <StackPanel>
+                    <TextBlock Text="Apple encrypted (recommended)" />
+                    <TextBlock Classes="hint"
+                               Text="Signs in with the Mac's own RSA identity key, which Vesper pins on first use. The whole session is AES-encrypted. Nothing else to set up." />
+                </StackPanel>
+            </RadioButton>
+            <RadioButton x:Name="SshChoice" GroupName="transport" IsCheckedChanged="Transport_Changed"
+                         AutomationProperties.Name="Through an SSH tunnel">
+                <StackPanel>
+                    <TextBlock Text="Through an SSH tunnel" />
+                    <TextBlock Classes="hint"
+                               Text="Adds a standard SSH layer with a pinned host key. Needs Remote Login turned on in the Mac's Sharing settings." />
+                </StackPanel>
+            </RadioButton>
+            <StackPanel x:Name="SshPortPanel" IsVisible="False" Margin="28,4,0,0" HorizontalAlignment="Left">
+                <TextBlock Classes="label" Text="SSH port" />
+                <NumericUpDown x:Name="SshPortBox" Width="140" Minimum="1" Maximum="65535" Increment="1" FormatString="0"
+                               ShowButtonSpinner="False" AllowSpin="False" />
+            </StackPanel>
+        </StackPanel>
+
+        <Expander Header="Display and input">
+            <StackPanel Spacing="14">
+                <StackPanel>
+                    <TextBlock Classes="label" Text="Resolution" />
+                    <ComboBox x:Name="ResolutionBox">
+                        <ComboBoxItem Content="Match this display — sharp full screen, the Mac does the scaling (recommended)" />
+                        <ComboBoxItem Content="Every native pixel (sharpest, most bandwidth)" />
+                    </ComboBox>
+                </StackPanel>
+                <StackPanel>
+                    <TextBlock Classes="label" Text="Picture" />
+                    <ComboBox x:Name="ColorBox">
+                        <ComboBoxItem Content="Adaptive — Apple's fast codec, sharpens in a moment (recommended)" />
+                        <ComboBoxItem Content="Full colour, lossless — the most data" />
+                        <ComboBoxItem Content="Thousands of colours — about half the data" />
+                        <ComboBoxItem Content="Greyscale — for very slow connections" />
+                    </ComboBox>
+                </StackPanel>
+                <StackPanel>
+                    <TextBlock Classes="label" Text="Modifier keys" />
+                    <ComboBox x:Name="ModifierBox">
+                        <ComboBoxItem Content="Mac style: Ctrl is ⌘ Command, Alt is ⌥ Option, Super is ⌃ Control" />
+                        <ComboBoxItem Content="As labelled: Ctrl is ⌃ Control, Alt is ⌥ Option, Super is ⌘ Command" />
+                    </ComboBox>
+                </StackPanel>
+                <StackPanel>
+                    <TextBlock Classes="label" Text="Share the clipboard (text)" />
+                    <ToggleSwitch x:Name="ClipboardSwitch" OffContent="Off — nothing crosses over"
+                                  OnContent="On — only while the session window is in front" />
+                </StackPanel>
+                <StackPanel>
+                    <TextBlock Classes="label" Text="View only" />
+                    <ToggleSwitch x:Name="ViewOnlySwitch" OffContent="Control the Mac" OnContent="Watch without sending input" />
+                </StackPanel>
+            </StackPanel>
+        </Expander>
+
+        <Expander Header="Advanced">
+            <StackPanel Spacing="14">
+                <StackPanel HorizontalAlignment="Left">
+                    <TextBlock Classes="label" Text="Screen Sharing port" />
+                    <NumericUpDown x:Name="PortBox" Width="180" Minimum="1" Maximum="65535" Increment="1" FormatString="0"
+                                   ShowButtonSpinner="False" AllowSpin="False" />
+                </StackPanel>
+                <StackPanel>
+                    <TextBlock Classes="label" Text="Compression" />
+                    <ComboBox x:Name="CodecBox">
+                        <ComboBoxItem Content="Automatic — zlib on the local network, ZRLE further away" />
+                        <ComboBoxItem Content="zlib — least work for the Mac" />
+                        <ComboBoxItem Content="ZRLE — fewest bytes on the wire" />
+                    </ComboBox>
+                </StackPanel>
+                <StackPanel Spacing="4">
+                    <TextBlock Classes="label" Text="Allow Apple's older sign-in on unprotected networks" />
+                    <ToggleSwitch x:Name="LegacySwitch" OffContent="Off (recommended)" OnContent="On" />
+                    <TextBlock Classes="hint"
+                               Text="Only for a Mac that doesn't take identity-key sign-in. The session is still encrypted, but someone on the same network could impersonate the Mac to capture your password. Through an SSH tunnel, or straight to the Mac's Tailscale address, it's allowed anyway, because those prove which machine answers. Once a Mac has proven its identity key, Vesper won't use this for it on an unprotected network." />
+                </StackPanel>
+                <StackPanel x:Name="RsaRefusedPanel" Spacing="4" IsVisible="False">
+                    <TextBlock Classes="hint"
+                               Text="This Mac refused identity-key sign-in over a protected connection, so Vesper uses Apple's older sign-in for it there." />
+                    <HyperlinkButton x:Name="RetryRsaButton" Content="Try identity-key sign-in again" Padding="0" Click="RetryRsa_Click" />
+                </StackPanel>
+            </StackPanel>
+        </Expander>
+    </StackPanel>
+</UserControl>

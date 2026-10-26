@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Vesper for Linux (X11, or Wayland through XWayland), built with Avalonia. It also runs on
+       Windows, for development. Everything below the UI is shared with the Windows app through
+       Vesper.Client. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RuntimeIdentifiers>linux-x64;win-x64</RuntimeIdentifiers>
+    <AssemblyName>vesper</AssemblyName>
+    <RootNamespace>Vesper.Linux</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <ApplicationIcon>..\Vesper.App\Assets\Vesper.ico</ApplicationIcon>
+    <Description>Vesper — a fast, secure Apple Remote Desktop client for Linux.</Description>
+    <!-- No telemetry or diagnostics leave the machine: .NET's own event pipe and startup hooks are off. -->
+    <EventSourceSupport>false</EventSourceSupport>
+    <StartupHookSupport>false</StartupHookSupport>
+    <UseSystemResourceKeys>false</UseSystemResourceKeys>
+    <!-- Avalonia's packages report build-time usage statistics to avaloniaui.net from every
+         build unless AVALONIA_TELEMETRY_OPTOUT is set. Their task runs only when this property
+         (set by Avalonia.props, and used for nothing else) is non-empty, so building Vesper
+         sends nothing. -->
+    <UsedAvaloniaProducts></UsedAvaloniaProducts>
+  </PropertyGroup>
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Vesper.Client\Vesper.Client.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
+    <PackageReference Include="Avalonia.Fonts.Inter" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Licence notices for code Vesper ports, shipped beside the app. -->
+    <None Include="..\..\THIRD-PARTY-NOTICES.md" Link="THIRD-PARTY-NOTICES.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!--
+    The runtime's debugger, crash-dump and LTTng tracing helpers aren't published: a dump or a
+    trace would hold screen contents and session keys, so nothing that writes one ships with Vesper.
+  -->
+  <Target Name="VesperTrimPublishedFiles" BeforeTargets="_ComputeResolvedFilesToPublishTypes">
+    <ItemGroup>
+      <_VesperUnneeded Include="@(ResolvedFileToPublish)"
+                       Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('%(ResolvedFileToPublish.Filename)%(ResolvedFileToPublish.Extension)', '(?i)^(createdump(\.exe)?|(lib)?mscordbi\.(dll|so)|(lib)?mscordaccore.*\.(dll|so)|libcoreclrtraceptprovider\.so|Microsoft\.DiaSymReader\.Native\..*\.dll)$'))" />
+      <ResolvedFileToPublish Remove="@(_VesperUnneeded)" />
+    </ItemGroup>
+  </Target>
+</Project>

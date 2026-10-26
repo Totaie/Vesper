@@ -10,6 +10,7 @@
     </Project>
     <Project Path="src/Vesper.Client/Vesper.Client.csproj" />
     <Project Path="src/Vesper.Core/Vesper.Core.csproj" />
+    <Project Path="src/Vesper.Linux/Vesper.Linux.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Vesper.Core.Tests/Vesper.Core.Tests.csproj" />
