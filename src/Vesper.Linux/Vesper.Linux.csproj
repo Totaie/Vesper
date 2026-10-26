@@ -29,6 +29,9 @@
     <ProjectReference Include="..\Vesper.Client\Vesper.Client.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Vesper.Core.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Avalonia" />
     <PackageReference Include="Avalonia.Desktop" />
     <PackageReference Include="Avalonia.Themes.Fluent" />

@@ -16,8 +16,10 @@ namespace Vesper.Linux.Services;
 /// Characters are what the keyboard layout typed (the event's key symbol), except under Ctrl or
 /// Super, where the key's unshifted US character is sent: shortcuts then work under any layout or
 /// modifier, and the Mac infers no Shift from an uppercase keysym (Command-Z under Caps Lock
-/// would otherwise arrive as Command-Shift-Z). A key's release always repeats the keysym its
-/// press sent.
+/// would otherwise arrive as Command-Shift-Z). Some Linux sessions deliver key events without
+/// the typed character, or with the unshifted one while Shift is held; then the key's shifted US
+/// character is sent, because the Mac doesn't apply Shift to a digit or punctuation keysym itself
+/// (Shift+1 would type "1", not "!"). A key's release always repeats the keysym its press sent.
 /// </summary>
 internal sealed class KeyMapper
 {
@@ -120,8 +122,15 @@ internal sealed class KeyMapper
     {
         // Ctrl and Super are Command and Control in either layout: send the key itself.
         bool shortcut = CtrlDown || SuperDown;
-        if (!shortcut && SingleCharacter(symbol) is { } typed) return KeySym.FromCodePoint(typed);
-        return UsCharacter(key) is { } c ? KeySym.FromCodePoint(c) : 0;
+        char? plain = UsCharacter(key);
+        if (!shortcut && SingleCharacter(symbol) is { } typed)
+        {
+            // An unshifted symbol under Shift is the event leaving Shift out, not the layout.
+            bool shiftMissing = ShiftDown && plain is { } p && typed == p && UsShifted(key) is not null;
+            if (!shiftMissing) return KeySym.FromCodePoint(typed);
+        }
+        if (!shortcut && ShiftDown && UsShifted(key) is { } shifted) return KeySym.FromCodePoint(shifted);
+        return plain is { } c ? KeySym.FromCodePoint(c) : 0;
     }
 
     /// <summary>The code point when <paramref name="symbol"/> is exactly one printable character.</summary>
@@ -161,6 +170,34 @@ internal sealed class KeyMapper
         PhysicalKey.Period => '.',
         PhysicalKey.Slash => '/',
         PhysicalKey.IntlBackslash => '<',
+        _ => null,
+    };
+
+    /// <summary>What the key types on a US keyboard with Shift held (letters are left to the Mac's Shift).</summary>
+    private static char? UsShifted(PhysicalKey key) => key switch
+    {
+        PhysicalKey.Digit1 => '!',
+        PhysicalKey.Digit2 => '@',
+        PhysicalKey.Digit3 => '#',
+        PhysicalKey.Digit4 => '$',
+        PhysicalKey.Digit5 => '%',
+        PhysicalKey.Digit6 => '^',
+        PhysicalKey.Digit7 => '&',
+        PhysicalKey.Digit8 => '*',
+        PhysicalKey.Digit9 => '(',
+        PhysicalKey.Digit0 => ')',
+        PhysicalKey.Minus => '_',
+        PhysicalKey.Equal => '+',
+        PhysicalKey.BracketLeft => '{',
+        PhysicalKey.BracketRight => '}',
+        PhysicalKey.Backslash => '|',
+        PhysicalKey.Semicolon => ':',
+        PhysicalKey.Quote => '"',
+        PhysicalKey.Backquote => '~',
+        PhysicalKey.Comma => '<',
+        PhysicalKey.Period => '>',
+        PhysicalKey.Slash => '?',
+        PhysicalKey.IntlBackslash => '>',
         _ => null,
     };
 

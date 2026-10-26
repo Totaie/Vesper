@@ -16,6 +16,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Vesper.Core\Vesper.Core.csproj" />
     <ProjectReference Include="..\..\src\Vesper.Client\Vesper.Client.csproj" />
+    <ProjectReference Include="..\..\src\Vesper.Linux\Vesper.Linux.csproj" />
     <ProjectReference Include="..\..\tools\Vesper.FakeMac\Vesper.FakeMac.csproj" />
   </ItemGroup>
 </Project>
