@@ -57,6 +57,13 @@ public sealed partial class SessionWindow : Window, ITrustPrompts, IDialogHost
     /// <summary>The Mac has proven itself: only now are its screen shown and input sent.</summary>
     private bool _secured;
 
+    // A session that drops (Wi-Fi roaming, the Mac restarting Screen Sharing) comes back by itself
+    // when its password is saved; a typed one isn't kept around for this.
+    private static readonly TimeSpan[] ReconnectDelays = [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(15)];
+    private int _reconnectAttempt;
+    private bool _wasSecured;
+    private CancellationTokenSource? _reconnectWait;
+
     internal static void Open(MacProfile profile, string? password)
     {
         var existing = App.Current.Sessions.FirstOrDefault(s => s._profile.Id == profile.Id);
@@ -141,18 +148,20 @@ public sealed partial class SessionWindow : Window, ITrustPrompts, IDialogHost
 
     // ───────────────────────────── Connecting ─────────────────────────────
 
-    private async Task ConnectAsync()
+    private async Task ConnectAsync(bool automatic = false)
     {
-        ShowConnecting();
+        ShowConnecting(automatic);
         string? password = _password;
         _password = null;
         string? problem = null;
+        bool fromVault = false;
         if (password is null && _profile.HasSavedPassword && await UnlockVaultAsync())
         {
             switch (Vesper.Vault.TryGetPassword(_profile, out string saved))
             {
                 case VaultLookup.Found:
                     password = saved;
+                    fromVault = true;
                     _typedPassword = null;
                     break;
                 case VaultLookup.Mismatch:
@@ -180,7 +189,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts, IDialogHost
         try
         {
             _fitTarget = FitTarget();
-            var connection = await Vesper.Connections.ConnectAsync(_profile, password, _fitTarget, this, progress, _cts.Token);
+            var connection = await Vesper.Connections.ConnectAsync(_profile, password, fromVault, _fitTarget, this, progress, _cts.Token);
             if (_closing)
             {
                 // The window closed while the last step finished: don't leave a session running.
@@ -202,6 +211,20 @@ public sealed partial class SessionWindow : Window, ITrustPrompts, IDialogHost
             await ConnectAsync();
             return;
         }
+        catch (SavedPasswordWithheldException e)
+        {
+            // The user trusted a changed key; the saved password isn't sent to it, so ask.
+            if (_closing) return;
+            _typedPassword = await AskPasswordAsync(e.Message);
+            if (_typedPassword is null)
+            {
+                ShowProblem("Not connected", e.Message, retry: true);
+                return;
+            }
+            _password = _typedPassword.Value.Password;
+            await ConnectAsync();
+            return;
+        }
         catch (OperationCanceledException) when (_closing)
         {
             return;
@@ -211,8 +234,15 @@ public sealed partial class SessionWindow : Window, ITrustPrompts, IDialogHost
             // The Mac gave up on the half-finished sign-in while the trust prompt was being read.
             // The key was approved, so the next attempt goes straight through.
             Diagnostics.Add($"Connection to {_profile.Host} timed out during a trust prompt; retrying.");
-            _password = password;
+            // A saved password is fetched (and judged as saved) again, never passed on as typed.
+            _password = fromVault ? null : password;
             await ConnectAsync();
+            return;
+        }
+        catch (Exception e) when (automatic && IsDrop(e) && !_closing)
+        {
+            Diagnostics.Add($"Reconnecting to {_profile.Host} failed: {e.GetType().Name}: {e.Message}");
+            await ReconnectSoonAsync(Explain(e, duringSession: true));
             return;
         }
         catch (Exception e)
@@ -294,6 +324,8 @@ public sealed partial class SessionWindow : Window, ITrustPrompts, IDialogHost
 
         ShowSecurity(connection.Security, session.Info);
         Remember(p => p.LastConnected = DateTimeOffset.Now);
+        _wasSecured = true;
+        _reconnectAttempt = 0;
         Overlay.IsVisible = false;
         Surface.Focus();
         UpdateTitle();
@@ -307,6 +339,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts, IDialogHost
     private async Task RunAsync(ConnectedMac connection)
     {
         string title = "Disconnected", reason = "The Mac closed the connection.";
+        bool dropped = false;
         try
         {
             await connection.Session.RunAsync(_cts!.Token);
@@ -319,11 +352,46 @@ public sealed partial class SessionWindow : Window, ITrustPrompts, IDialogHost
         {
             if (e is SecurityRefusedException) title = "Connection stopped";
             reason = Explain(e, duringSession: true);
+            dropped = IsDrop(e);
             Diagnostics.Add($"Session with {_profile.Host} ended: {e.GetType().Name}: {e.Message}");
         }
         if (_closing) return;
         await TearDownAsync();
+        if (dropped && _wasSecured && _profile.HasSavedPassword)
+        {
+            await ReconnectSoonAsync(reason);
+            return;
+        }
         ShowProblem(title, reason, retry: true);
+    }
+
+    /// <summary>The network failing under a session, as opposed to the Mac or Vesper refusing something.</summary>
+    private static bool IsDrop(Exception e) => e is IOException or SocketException or TimeoutException or ConnectionClosedException;
+
+    /// <summary>Waits a moment, then tries again, a few times, before giving up and saying why.</summary>
+    private async Task ReconnectSoonAsync(string reason)
+    {
+        if (_reconnectAttempt >= ReconnectDelays.Length)
+        {
+            _reconnectAttempt = 0;
+            ShowProblem("Disconnected", reason, retry: true);
+            return;
+        }
+        var delay = ReconnectDelays[_reconnectAttempt++];
+        ShowProblem($"Reconnecting to {MacNames.DisplayName(_profile)}",
+            $"{reason} Trying again in {delay.TotalSeconds:0} seconds ({_reconnectAttempt} of {ReconnectDelays.Length}).", retry: true);
+        _reconnectWait?.Cancel();
+        _reconnectWait = new CancellationTokenSource();
+        try
+        {
+            await Task.Delay(delay, _reconnectWait.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return; // retried by hand, or closed
+        }
+        if (_closing || _connection is not null) return;
+        await ConnectAsync(automatic: true);
     }
 
     private async Task TearDownAsync()
@@ -359,7 +427,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts, IDialogHost
         _ => e.Message,
     };
 
-    private void ShowConnecting()
+    private void ShowConnecting(bool automatic = false)
     {
         _steps.Clear();
         _steps.Add(new StepItem(ConnectStage.Reaching, $"Reaching {_profile.Host}"));
@@ -369,7 +437,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts, IDialogHost
         _steps.Add(new StepItem(ConnectStage.Encrypting, "Encrypting the session"));
         _steps.Add(new StepItem(ConnectStage.Ready, "Bringing up the screen"));
         SetStage(ConnectStage.Reaching);
-        OverlayTitle.Text = $"Connecting to {MacNames.DisplayName(_profile)}";
+        OverlayTitle.Text = $"{(automatic ? "Reconnecting" : "Connecting")} to {MacNames.DisplayName(_profile)}";
         OverlayMessage.IsVisible = false;
         StepsList.IsVisible = true;
         RetryButton.IsVisible = false;
@@ -402,7 +470,12 @@ public sealed partial class SessionWindow : Window, ITrustPrompts, IDialogHost
         (retry ? RetryButton : CancelButton).Focus();
     }
 
-    private async void Retry_Click(object? sender, RoutedEventArgs e) => await ConnectAsync();
+    private async void Retry_Click(object? sender, RoutedEventArgs e)
+    {
+        _reconnectWait?.Cancel();
+        _reconnectAttempt = 0;
+        await ConnectAsync();
+    }
 
     private async void EditMac_Click(object? sender, RoutedEventArgs e)
     {
@@ -1173,6 +1246,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts, IDialogHost
     private async void OnClosed(object? sender, EventArgs e)
     {
         _closing = true;
+        _reconnectWait?.Cancel();
         _floatingTimer.Stop();
         _noticeTimer.Stop();
         Layer.CloseAll();

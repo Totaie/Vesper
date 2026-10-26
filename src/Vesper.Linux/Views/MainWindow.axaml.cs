@@ -9,6 +9,7 @@ using Avalonia.VisualTree;
 using Vesper.Linux.Controls;
 using Vesper.Models;
 using Vesper.Services;
+using Vesper.Updates;
 
 namespace Vesper.Linux.Views;
 
@@ -22,10 +23,12 @@ public sealed partial class MainWindow : Window, IDialogHost
         InitializeComponent();
         MacsList.ItemsSource = _macs;
         App.Current.Data.ProfilesChanged += OnProfilesChanged;
+        App.Current.Updates.Changed += OnUpdateChanged;
         Activated += (_, _) => UpdateGreeting();
         Closed += (_, _) =>
         {
             App.Current.Data.ProfilesChanged -= OnProfilesChanged;
+            App.Current.Updates.Changed -= OnUpdateChanged;
             Layer.CloseAll();
             App.Current.MainClosed();
         };
@@ -39,6 +42,65 @@ public sealed partial class MainWindow : Window, IDialogHost
         };
         Refresh();
         UpdateGreeting();
+        RefreshUpdateBar();
+    }
+
+    private string? _dismissedUpdate;
+
+    private void OnUpdateChanged() => Dispatcher.UIThread.Post(RefreshUpdateBar);
+
+    private void RefreshUpdateBar()
+    {
+        var updates = Vesper.Updates;
+        if (updates.Offer is not { } offer || offer.Version == _dismissedUpdate
+            || updates.Status is not (UpdateStatus.Ready or UpdateStatus.Available))
+        {
+            UpdateBar.IsVisible = false;
+            return;
+        }
+        string summary = offer.Summary.Length > 0 ? offer.Summary + " " : "";
+        bool ready = updates.Status == UpdateStatus.Ready;
+        UpdateTitle.Text = ready ? $"Vesper {offer.Version} is ready to install" : $"Vesper {offer.Version} is available";
+        UpdateDetail.Text = summary + (ready
+            ? "Installing asks for your password (pacman), then Vesper restarts."
+            : "This copy can't update itself; download the new version from its releases page.");
+        UpdateActions.Children.Clear();
+        var later = new Button { Content = "Later" };
+        later.Click += (_, _) =>
+        {
+            _dismissedUpdate = offer.Version;
+            UpdateBar.IsVisible = false;
+        };
+        var act = new Button { Content = ready ? "Install and restart" : "Open releases page" };
+        act.Classes.Add("accent");
+        act.Click += async (_, _) => await UpdateActionAsync(ready);
+        UpdateActions.Children.Add(later);
+        UpdateActions.Children.Add(act);
+        UpdateBar.IsVisible = true;
+    }
+
+    private async Task UpdateActionAsync(bool ready)
+    {
+        if (!ready)
+        {
+            await Launcher.LaunchUriAsync(UpdateService.ReleasesPage);
+            return;
+        }
+        int sessions = Vesper.Sessions.Count;
+        if (sessions > 0 && !await Dialogs.ConfirmAsync(this, "Restart Vesper now?",
+                sessions == 1 ? "Your Mac will be disconnected while Vesper updates." : $"Your {sessions} Macs will be disconnected while Vesper updates.",
+                "Install and restart"))
+        {
+            return;
+        }
+        try
+        {
+            await Vesper.RestartToUpdateAsync();
+        }
+        catch (Exception ex)
+        {
+            await Dialogs.InfoAsync(this, "Update not installed", ex.Message);
+        }
     }
 
     DialogLayer IDialogHost.DialogLayer => Layer;

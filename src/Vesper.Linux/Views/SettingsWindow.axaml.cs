@@ -3,6 +3,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Vesper.Models;
+using Vesper.Updates;
 
 namespace Vesper.Linux.Views;
 
@@ -28,9 +29,11 @@ public sealed partial class SettingsWindow : Window, IDialogHost
         InitializeComponent();
         Closed += (_, _) =>
         {
+            App.Current.Updates.Changed -= OnUpdateChanged;
             Layer.CloseAll();
             s_open = null;
         };
+        App.Current.Updates.Changed += OnUpdateChanged;
 
         var vault = App.Current.Vault;
         LockBox.SelectedItem = LockBox.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (string?)i.Tag == Settings.LockAfterMinutes.ToString())
@@ -39,6 +42,7 @@ public sealed partial class SettingsWindow : Window, IDialogHost
         ThemeBox.SelectedIndex = (int)Settings.Theme;
         StatsSwitch.IsChecked = Settings.ShowConnectionStats;
         UpdatesCheck.IsChecked = Settings.CheckForUpdates;
+        RefreshUpdate();
         if (!vault.CanSave)
         {
             NoVaultCard.IsVisible = true;
@@ -46,7 +50,7 @@ public sealed partial class SettingsWindow : Window, IDialogHost
             ForgetAllButton.IsEnabled = vault.Exists;
         }
         VersionText.Text = $"Version {typeof(App).Assembly.GetName().Version?.ToString(3)} · .NET {Environment.Version}";
-        PrivacyText.Text = "No accounts, no telemetry, no crash reports. Vesper connects only to the Macs you add. " +
+        PrivacyText.Text = "No accounts, no telemetry, no crash reports. Vesper connects only to the Macs you add, and to GitHub to look for updates (unless you turn that off above). " +
             $"Its settings live in {Tilde(App.Current.Data.Directory)}, readable only by you, with passwords sealed by AES-256-GCM " +
             "under a key kept in your login keyring.";
         RefreshDiagnostics();
@@ -114,6 +118,43 @@ public sealed partial class SettingsWindow : Window, IDialogHost
         if (_loading) return;
         Settings.ShowConnectionStats = StatsSwitch.IsChecked == true;
         Save();
+    }
+
+    private async void CheckUpdates_Click(object? sender, RoutedEventArgs e) => await App.Current.Updates.CheckAsync(manual: true);
+
+    private async void InstallUpdate_Click(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            await App.Current.RestartToUpdateAsync();
+        }
+        catch (Exception ex)
+        {
+            await Dialogs.InfoAsync(this, "Update not installed", ex.Message);
+        }
+    }
+
+    private void OnUpdateChanged() => Avalonia.Threading.Dispatcher.UIThread.Post(RefreshUpdate);
+
+    private void RefreshUpdate()
+    {
+        var u = App.Current.Updates;
+        string version = u.CurrentVersion.ToString(3);
+        string? offered = u.Offer?.Version;
+        (UpdateTitle.Text, UpdateDetail.Text) = u.Status switch
+        {
+            UpdateStatus.Checking => ("Checking for updates…", $"You have Vesper {version}."),
+            UpdateStatus.Downloading => ($"Downloading Vesper {offered}…", "It's checked against Vesper's release signature before it's used."),
+            UpdateStatus.Ready => ($"Vesper {offered} is ready to install", "Installing asks for your password, then Vesper restarts."),
+            UpdateStatus.Available => ($"Vesper {offered} is available", "This copy wasn't installed from Vesper's Arch package, so it can't update itself. Download the new version from its releases page."),
+            UpdateStatus.Failed => ("Couldn't check for updates", u.Error ?? ""),
+            UpdateStatus.UpToDate => ("Vesper is up to date", $"Version {version}" + (u.LastChecked is { } t ? $", checked at {t:HH:mm}." : ".")),
+            _ => ("Updates", $"You have Vesper {version}."),
+        };
+        UpdateProgress.IsVisible = u.Status == UpdateStatus.Downloading;
+        UpdateProgress.Value = u.Progress;
+        InstallUpdateButton.IsVisible = u.Status == UpdateStatus.Ready;
+        CheckUpdatesButton.IsEnabled = u.Status is not (UpdateStatus.Checking or UpdateStatus.Downloading);
     }
 
     private void Updates_Toggled(object? sender, RoutedEventArgs e)

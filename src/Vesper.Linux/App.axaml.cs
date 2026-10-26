@@ -9,6 +9,7 @@ using Vesper.Linux.Views;
 using Vesper.Models;
 using Vesper.Security;
 using Vesper.Services;
+using Vesper.Updates;
 
 namespace Vesper.Linux;
 
@@ -24,6 +25,7 @@ public sealed partial class App : Application
     internal AppData Data { get; private set; } = null!;
     internal SecretVault Vault { get; private set; } = null!;
     internal ConnectionService Connections { get; private set; } = null!;
+    internal UpdateService Updates { get; private set; } = null!;
     internal List<SessionWindow> Sessions { get; } = [];
 
     /// <summary>Something found at startup that the user needs to hear about, shown by the home window once.</summary>
@@ -56,6 +58,8 @@ public sealed partial class App : Application
         CheckVault();
         Connections = new ConnectionService(Data, Vault);
         if (!Vault.CanSave) Diagnostics.Add("Saved passwords are off: " + Vault.UnavailableReason);
+        Updates = new UpdateService(Data, typeof(App).Assembly.GetName().Version ?? new Version(0, 0, 0));
+        Updates.Start();
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
@@ -100,6 +104,18 @@ public sealed partial class App : Application
     internal MainWindow? Main => _main;
 
     internal void MainClosed() => _main = null;
+
+    /// <summary>
+    /// Installs the downloaded update (pacman, after your password through polkit), then starts
+    /// the new version and quits this one. Throws with a message if it wasn't installed.
+    /// </summary>
+    internal async Task RestartToUpdateAsync()
+    {
+        if (Updates is not { Status: UpdateStatus.Ready, Offer: { } offer, DownloadedFile: { } file }) return;
+        await UpdateInstaller.InstallAsync(offer, file, relaunch: true);
+        foreach (var session in Sessions.ToList()) session.Close();
+        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop) desktop.Shutdown();
+    }
 
     internal void SessionOpened(SessionWindow window) => Sessions.Add(window);
 

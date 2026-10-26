@@ -26,10 +26,7 @@
             <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                 <StackPanel MaxWidth="1180" Margin="44,10,44,36" Spacing="34">
 
-                    <!--
-                        UPDATES: the bar automatic updates will use. It stays collapsed (IsVisible="False")
-                        until updates are wired in; nothing here checks for or installs anything.
-                    -->
+                    <!-- A new version, downloaded and checked. -->
                     <Border x:Name="UpdateBar" IsVisible="False" Classes="card" CornerRadius="10" Padding="16,12">
                         <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
                             <c:Icon Data="{x:Static c:Icons.Refresh}" Size="18" Foreground="{DynamicResource VesperStarBrush}" VerticalAlignment="Center" />
@@ -152,7 +149,7 @@
                     <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center" Opacity="0.75" Margin="0,6,0,0">
                         <c:Icon Data="{x:Static c:Icons.Shield}" Size="14" Foreground="{DynamicResource VesperTextSecondaryBrush}" VerticalAlignment="Center" />
                         <TextBlock FontSize="12" Classes="secondary wrap" VerticalAlignment="Center"
-                                   Text="Private by design: Vesper talks only to the Macs you add. No accounts, no telemetry, no cloud." />
+                                   Text="Private by design: Vesper talks only to the Macs you add, and to GitHub for its own updates. No accounts, no telemetry." />
                     </StackPanel>
                 </StackPanel>
             </ScrollViewer>
