@@ -175,7 +175,7 @@ The decoders are written in C#, so out-of-range accesses throw instead of corrup
 
 ### Updates
 
-Vesper checks its public releases page (`github.com/Totaie/Vesper-releases`) a little after
+Vesper checks its releases page (`github.com/Totaie/Vesper/releases`) a little after
 starting and twice a day, over HTTPS. Those requests tell GitHub this computer's address and
 Vesper's version, nothing else.
 
@@ -192,8 +192,9 @@ Vesper's version, nothing else.
   File names are plain names, never paths; a portable update is unpacked only inside Vesper's
   own folder.
 - **Installed the way Vesper was**: the next per-user Setup run silently (no administrator
-  prompt), a new app folder the portable launcher swaps in, or `pacman -U` through `pkexec`,
-  which asks for your password. Nothing is installed until you restart or quit Vesper.
+  prompt), a new app folder the portable launcher swaps in, or a new AppImage renamed over the
+  old one (or, for 0.2.0's Arch package, `pacman -U` through `pkexec`, which asks for your
+  password). Nothing is installed until you restart or quit Vesper.
 
 ## Limits
 
@@ -221,5 +222,5 @@ Vesper's version, nothing else.
 
 ## Reporting
 
-This is a personal project. If you find a problem, open an issue in this repository. If it's
-sensitive, describe it in general terms and ask for a private channel.
+If you find a security problem, please report it privately through this repository's
+**Security › Report a vulnerability** page rather than in a public issue.

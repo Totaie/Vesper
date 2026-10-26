@@ -12,7 +12,7 @@ mkdir -p "$out/vesper"
 dotnet publish "$root/src/Vesper.Linux/Vesper.Linux.csproj" -c Release -r linux-x64 --self-contained -o "$out/vesper" -nologo
 rm -f "$out"/vesper/*.pdb
 cp "$root/src/Vesper.App/Assets/Vesper-256.png" "$out/vesper/vesper.png"
-cp "$root/THIRD-PARTY-NOTICES.md" "$out/vesper/"
+cp "$root/THIRD-PARTY-NOTICES.md" "$root/LICENSE" "$out/vesper/"
 tar -C "$out" --owner=0 --group=0 -czf "$out/vesper-$version-linux-x64.tar.gz" vesper
 rm -rf "$out/vesper"
 

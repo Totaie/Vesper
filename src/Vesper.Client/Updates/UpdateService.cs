@@ -33,7 +33,7 @@ public enum UpdateStatus
 /// </summary>
 public sealed class UpdateService : IDisposable
 {
-    public const string Repository = "Totaie/Vesper-releases";
+    public const string Repository = "Totaie/Vesper";
     private const string ManifestName = "vesper-update.json";
     private const int MaxManifestBytes = 64 * 1024;
     private static readonly TimeSpan FirstCheck = TimeSpan.FromSeconds(20);

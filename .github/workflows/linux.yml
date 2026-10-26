@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   arch:
-    name: Arch Linux package
+    name: Linux (Arch container)
     runs-on: ubuntu-latest
     container: archlinux:latest
     timeout-minutes: 45
@@ -23,7 +23,7 @@ jobs:
         run: |
           pacman -Syu --noconfirm --needed base-devel git curl pacman-contrib namcap \
             icu openssl zlib fontconfig freetype2 libx11 libice libsm libxrandr libxi libxcursor libxext \
-            ca-certificates libsecret gnome-keyring dbus xorg-server-xvfb imagemagick ttf-dejavu
+            ca-certificates libsecret gnome-keyring dbus xorg-server-xvfb imagemagick ttf-dejavu file desktop-file-utils
 
       - uses: actions/checkout@v4
 
@@ -57,11 +57,17 @@ jobs:
       - name: Start it
         run: su builder -c "bash packaging/arch/ci-session.sh xvfb-run -a -s '-screen 0 1600x1000x24' bash packaging/arch/smoke.sh $GITHUB_WORKSPACE/dist/screenshots"
 
+      - name: Build the AppImage
+        run: su builder -c "PATH=/opt/dotnet:\$PATH DOTNET_ROOT=/opt/dotnet CI=true bash packaging/appimage/build.sh"
+
+      - name: Start the AppImage
+        run: su builder -c "bash packaging/arch/ci-session.sh xvfb-run -a -s '-screen 0 1600x1000x24' bash packaging/appimage/smoke.sh $GITHUB_WORKSPACE/dist/appimage/Vesper-*-x86_64.AppImage $GITHUB_WORKSPACE/dist/screenshots/appimage"
+
       - uses: actions/upload-artifact@v4
         with:
-          name: vesper-arch
+          name: vesper-linux
           path: |
+            dist/appimage/*.AppImage
             dist/arch/*.pkg.tar.zst
-            dist/arch/*.tar.gz
             dist/screenshots/
           if-no-files-found: error

@@ -62,8 +62,10 @@ public sealed partial class MainWindow : Window, IDialogHost
         bool ready = updates.Status == UpdateStatus.Ready;
         UpdateTitle.Text = ready ? $"Vesper {offer.Version} is ready to install" : $"Vesper {offer.Version} is available";
         UpdateDetail.Text = summary + (ready
-            ? "Installing asks for your password (pacman), then Vesper restarts."
-            : "This copy can't update itself; download the new version from its releases page.");
+            ? (InstallInfo.Kind == InstallKind.LinuxPackage
+                ? "Installing asks for your password (pacman), then Vesper restarts."
+                : "It installs when you restart Vesper, or the next time you quit it.")
+            : "This copy can't update itself (run Vesper from its AppImage for that); download the new version from its releases page.");
         UpdateActions.Children.Clear();
         var later = new Button { Content = "Later" };
         later.Click += (_, _) =>
@@ -71,7 +73,7 @@ public sealed partial class MainWindow : Window, IDialogHost
             _dismissedUpdate = offer.Version;
             UpdateBar.IsVisible = false;
         };
-        var act = new Button { Content = ready ? "Install and restart" : "Open releases page" };
+        var act = new Button { Content = ready ? "Restart now" : "Open releases page" };
         act.Classes.Add("accent");
         act.Click += async (_, _) => await UpdateActionAsync(ready);
         UpdateActions.Children.Add(later);

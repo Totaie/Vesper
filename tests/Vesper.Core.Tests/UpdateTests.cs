@@ -152,6 +152,20 @@ public sealed class UpdateTests : IDisposable
         Assert.False(File.Exists(Path.Combine(_folder, "evil.txt")));
     }
 
+    [Fact]
+    public void An_AppImage_is_replaced_in_one_step_and_stays_runnable()
+    {
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "AppImages are Linux files");
+        Directory.CreateDirectory(_folder);
+        string image = Path.Combine(_folder, "Vesper.AppImage"), download = Path.Combine(_folder, "new.AppImage");
+        File.WriteAllText(image, "old");
+        File.WriteAllText(download, "new");
+        Assert.Equal(image, UpdateInstaller.ReplaceAppImage(download, image));
+        Assert.Equal("new", File.ReadAllText(image));
+        Assert.True(File.GetUnixFileMode(image).HasFlag(UnixFileMode.UserExecute));
+        Assert.False(File.Exists(image + ".new"));
+    }
+
     private string UpdatesFolder => Path.Combine(_folder, "data", "updates");
 
     private UpdateManifest Manifest(string version) => new()
@@ -211,7 +225,7 @@ public sealed class UpdateTests : IDisposable
         {
             string url = request.RequestUri!.ToString();
             lock (Requests) Requests.Add(url);
-            Assert.StartsWith("https://github.com/Totaie/Vesper-releases/releases/", url);
+            Assert.StartsWith("https://github.com/Totaie/Vesper/releases/", url);
             HttpContent content = url.EndsWith("/vesper-update.json") ? new ByteArrayContent(manifest)
                 : url.EndsWith("/vesper-update.json.sig") ? new StringContent(signature)
                 : url.Contains("/download/v") ? (HideLength ? new StreamContent(new MemoryStream(Installer)) : new ByteArrayContent(Installer))

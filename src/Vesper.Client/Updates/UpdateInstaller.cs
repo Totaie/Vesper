@@ -36,6 +36,10 @@ public static class UpdateInstaller
                 StagePortable(file, InstallInfo.PortableRoot!, manifest.Version);
                 if (relaunch) StartLauncher(InstallInfo.PortableRoot!);
                 break;
+            case InstallKind.LinuxAppImage when !OperatingSystem.IsWindows():
+                string image = ReplaceAppImage(file, InstallInfo.AppImagePath!);
+                if (relaunch) Process.Start(new ProcessStartInfo(image) { UseShellExecute = false });
+                break;
             case InstallKind.LinuxPackage:
                 await RunPacmanAsync(file, ct);
                 if (relaunch) Process.Start(new ProcessStartInfo(InstallInfo.LinuxLauncher) { UseShellExecute = false });
@@ -117,6 +121,30 @@ public static class UpdateInstaller
         // The launcher isn't running now (it exits as soon as it has started Vesper).
         if (launcher is not null) File.Move(launcher, Path.Combine(root, "Vesper.exe"), overwrite: true);
         File.WriteAllText(Path.Combine(staging, InstallInfo.ReadyMarker), version);
+    }
+
+    /// <summary>
+    /// Puts the new AppImage where the running one is: written beside it, made executable, then
+    /// renamed over it in one step, so the file is always either the old version or the new one.
+    /// The running copy keeps its own (now unlinked) file until it quits.
+    /// </summary>
+    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+    internal static string ReplaceAppImage(string download, string image)
+    {
+        string staging = image + ".new";
+        try
+        {
+            File.Copy(download, staging, overwrite: true);
+            File.SetUnixFileMode(staging, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+                | UnixFileMode.GroupRead | UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+            File.Move(staging, image, overwrite: true);
+            return image;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (File.Exists(staging)) File.Delete(staging);
+            throw new InvalidOperationException($"Vesper can't replace {image} (it isn't yours to change). Download the new AppImage from the releases page instead.");
+        }
     }
 
     private static void StartLauncher(string root) =>

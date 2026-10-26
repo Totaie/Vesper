@@ -1,6 +1,6 @@
 # Vesper
 
-**A fast, secure Apple Remote Desktop client for Windows and Arch Linux.** Built for one job:
+**A fast, secure Apple Remote Desktop client for Windows and Linux.** Built for one job:
 putting your Mac's screen on your PC as if you were sitting at it, without the lag of plain VNC
 and without leaking a thing.
 
@@ -8,8 +8,9 @@ Vesper speaks Apple's own Screen Sharing protocol (RFB 003.889), not generic VNC
 nothing to install on the Mac. No accounts, no telemetry, no cloud: it talks only to the Macs you
 add, and to GitHub to keep itself up to date (with signed updates you can turn off).
 
-**Download:** [Totaie/Vesper-releases](https://github.com/Totaie/Vesper-releases/releases/latest)
-(Windows Setup or portable zip, x64 and ARM64; Arch Linux package).
+**Download:** [the latest release](https://github.com/Totaie/Vesper/releases/latest) (Windows Setup
+or portable zip, x64 and ARM64; Linux AppImage). Vesper is open source under the
+[MIT licence](LICENSE).
 
 ![A session](docs/screenshots/session.png)
 
@@ -110,16 +111,17 @@ it. From then on it's silent unless the key changes.
 
 ## Installing
 
-Releases are published to the public [Totaie/Vesper-releases](https://github.com/Totaie/Vesper-releases)
-repository, which installed copies also update from.
+Downloads are on this repository's [releases page](https://github.com/Totaie/Vesper/releases),
+which installed copies also update from.
 
 - **Windows Setup** (`Vesper-x.y.z-Setup-x64.exe`, or `-arm64` for Snapdragon/ARM PCs) installs
   for you only, with no administrator prompt, into `%LOCALAPPDATA%\Programs\Vesper`, with a
   Start menu entry and an uninstaller in Settings › Apps.
 - **Portable** (`Vesper-x.y.z-win-x64.zip`): extract the folder anywhere and run the `Vesper.exe`
   at its top (the `app` folder beside it holds the program).
-- **Arch Linux** (`vesper-x.y.z-1-x86_64.pkg.tar.zst`): `sudo pacman -U` it. Add `libsecret` and
-  a keyring (`gnome-keyring`, or KWallet) to save passwords, and `polkit` for in-app updates.
+- **Linux** (`Vesper-x.y.z-x86_64.AppImage`, Arch and other distributions): `chmod +x` it and run
+  it, from a folder you own such as `~/Applications` so it can update itself. Add `libsecret` and a
+  keyring (`gnome-keyring`, or KWallet) to save passwords.
 
 No .NET or Windows App SDK needs installing. The Windows builds aren't code-signed, so the first
 launch may show "Windows protected your PC": choose **More info › Run anyway**. Macs and
@@ -129,8 +131,7 @@ settings are kept in `%LOCALAPPDATA%\Vesper` (Linux: `~/.config/vesper`).
 
 Vesper checks its releases a little after starting and twice a day, downloads a new version in
 the background, and installs it when you restart or quit it: the next Setup runs silently, a
-portable copy swaps in a new `app` folder, and on Arch `pacman` installs the package after your
-password. Each release's `vesper-update.json` lists every download's size and SHA-256 and is
+portable copy swaps in a new `app` folder, and the AppImage replaces itself with the new one. Each release's `vesper-update.json` lists every download's size and SHA-256 and is
 signed with Vesper's release key; Vesper checks that signature, that the version is newer, and
 each download's hash before using it. Turn it off in Settings › Updates.
 
@@ -148,13 +149,13 @@ dotnet run --project src\Vesper.Linux    # the Linux app also runs on Windows, f
 .\scripts\package.ps1            # Setup and portable zip for x64 and ARM64 in .\dist
 ```
 
-The Arch package is built by `.github/workflows/linux.yml` in an Arch Linux container
-(`packaging/arch/build.sh`), which also runs the tests there and installs and starts the
-package. To release: put its package in `.\dist` beside the Windows downloads and run
+The AppImage is built by `.github/workflows/linux.yml` in an Arch Linux container
+(`packaging/appimage/build.sh`), which also runs the tests there and starts the result. To
+release: put the AppImage in `.\dist` beside the Windows downloads and run
 `.\scripts\release.ps1 -Summary "..."`, which signs the update description with the release
 key (kept only on the release machine, under `%USERPROFILE%\.vesper-release`; back it up with
-`dotnet run --project tools\Vesper.ReleaseTool -- backup <file>`) and publishes to
-Totaie/Vesper-releases.
+`dotnet run --project tools\Vesper.ReleaseTool -- backup <file>`) and publishes the release
+here.
 
 ## Testing without a Mac
 
@@ -181,7 +182,7 @@ src/Vesper.Client   shared by both apps: saved Macs, the vault, connecting, sign
 src/Vesper.App      the Windows app (WinUI 3): windows, GPU renderer, input, clipboard
 src/Vesper.Linux    the Linux app (Avalonia): the same, for X11 and Wayland desktops
 installer/          the Windows Setup script (Inno Setup)
-packaging/          the Arch Linux package
+packaging/          the Linux AppImage (and the Arch package 0.2.0 shipped as)
 tests/              unit and end-to-end tests (against FakeMac)
 tools/Vesper.FakeMac
 docs/PROTOCOL.md    Apple's protocol as Vesper implements it, with sources

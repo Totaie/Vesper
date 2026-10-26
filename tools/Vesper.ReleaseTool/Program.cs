@@ -56,6 +56,7 @@ try
                 ["windows-x64-portable"] = $"Vesper-{version}-win-x64.zip",
                 ["windows-arm64-portable"] = $"Vesper-{version}-win-arm64.zip",
                 ["linux-x64-pacman"] = $"vesper-{version}-1-x86_64.pkg.tar.zst",
+                ["linux-x64-appimage"] = $"Vesper-{version}-x86_64.AppImage",
             };
             foreach (var (kind, name) in files)
             {

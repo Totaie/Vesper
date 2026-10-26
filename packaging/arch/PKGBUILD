@@ -5,8 +5,8 @@ pkgver=0.0.0
 pkgrel=1
 pkgdesc='Fast, encrypted Apple Remote Desktop (macOS Screen Sharing) client'
 arch=('x86_64')
-url='https://github.com/Totaie/Vesper-releases'
-license=('LicenseRef-Vesper')
+url='https://github.com/Totaie/Vesper'
+license=('MIT')
 depends=('glibc' 'gcc-libs' 'icu' 'openssl' 'zlib' 'fontconfig' 'freetype2'
          'libx11' 'libice' 'libsm' 'libxrandr' 'libxi' 'libxcursor' 'libxext' 'ca-certificates')
 optdepends=('libsecret: remember Mac passwords in your login keyring'
@@ -25,4 +25,5 @@ package() {
     install -Dm644 vesper.desktop "$pkgdir/usr/share/applications/vesper.desktop"
     install -Dm644 vesper/vesper.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/vesper.png"
     install -Dm644 vesper/THIRD-PARTY-NOTICES.md "$pkgdir/usr/share/licenses/vesper/THIRD-PARTY-NOTICES.md"
+    install -Dm644 vesper/LICENSE "$pkgdir/usr/share/licenses/vesper/LICENSE"
 }

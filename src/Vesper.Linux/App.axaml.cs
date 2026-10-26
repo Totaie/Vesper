@@ -65,6 +65,7 @@ public sealed partial class App : Application
         {
             _main = new MainWindow();
             desktop.MainWindow = _main;
+            desktop.Exit += (_, _) => InstallOnExit();
         }
 
         // Lock the vault after a quiet spell with no session open.
@@ -105,6 +106,28 @@ public sealed partial class App : Application
 
     internal void MainClosed() => _main = null;
 
+    private bool _installStarted;
+
+    /// <summary>
+    /// Quitting with an update downloaded installs it, so the next start is the new version: for
+    /// an AppImage that's just replacing the file. (The Arch package needs a password, so it waits
+    /// for "Restart now".)
+    /// </summary>
+    private void InstallOnExit()
+    {
+        if (_installStarted || InstallInfo.Kind != InstallKind.LinuxAppImage
+            || Updates is not { Status: UpdateStatus.Ready, Offer: { } offer, DownloadedFile: { } file }) return;
+        _installStarted = true;
+        try
+        {
+            UpdateInstaller.InstallAsync(offer, file, relaunch: false).GetAwaiter().GetResult();
+        }
+        catch (Exception e)
+        {
+            Diagnostics.Add($"Couldn't install the update on exit: {e.Message}");
+        }
+    }
+
     /// <summary>
     /// Installs the downloaded update (pacman, after your password through polkit), then starts
     /// the new version and quits this one. Throws with a message if it wasn't installed.
@@ -112,7 +135,16 @@ public sealed partial class App : Application
     internal async Task RestartToUpdateAsync()
     {
         if (Updates is not { Status: UpdateStatus.Ready, Offer: { } offer, DownloadedFile: { } file }) return;
-        await UpdateInstaller.InstallAsync(offer, file, relaunch: true);
+        _installStarted = true;
+        try
+        {
+            await UpdateInstaller.InstallAsync(offer, file, relaunch: true);
+        }
+        catch
+        {
+            _installStarted = false;
+            throw;
+        }
         foreach (var session in Sessions.ToList()) session.Close();
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop) desktop.Shutdown();
     }

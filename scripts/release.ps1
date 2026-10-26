@@ -1,17 +1,19 @@
-# Publishes a Vesper release to the public releases repository, Totaie/Vesper-releases: what
-# installed copies update from. Run scripts\package.ps1 first, and put the Arch Linux package
-# (built by the Linux workflow) in .\dist too. This signs the update description with the release
-# key, which never leaves this PC, checks it against the key built into Vesper, and uploads.
+# Publishes a Vesper release on GitHub (Totaie/Vesper): what installed copies update from. Run
+# scripts\package.ps1 first, and put the Linux AppImage (built by the Linux workflow) in .\dist
+# too. This signs the update description with the release key, which never leaves this PC, checks
+# it against the key built into Vesper, and uploads.
 param(
     # A line or two for the update notice and the release page.
     [Parameter(Mandatory)] [string] $Summary,
     # Extra Markdown for the release page (what's new in detail).
     [string] $NotesFile,
+    # Where to publish. (0.2.1 also went to Totaie/Vesper-releases, where 0.2.0 looked.)
+    [string] $Repo = 'Totaie/Vesper',
     [switch] $Draft
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$repo = 'Totaie/Vesper-releases'
+$repo = $Repo
 [xml]$props = Get-Content (Join-Path $root 'Directory.Build.props')
 $version = ($props.Project.PropertyGroup | ForEach-Object { $_.Version } | Where-Object { $_ } | Select-Object -First 1)
 $dist = Join-Path $root 'dist'
@@ -21,10 +23,13 @@ $assets = @(
     "Vesper-$version-Setup-arm64.exe",
     "Vesper-$version-win-x64.zip",
     "Vesper-$version-win-arm64.zip",
-    "vesper-$version-1-x86_64.pkg.tar.zst"
+    "Vesper-$version-x86_64.AppImage"
 ) | ForEach-Object { Join-Path $dist $_ }
 $missing = $assets | Where-Object { -not (Test-Path $_) }
 if ($missing) { throw "Missing from dist: $($missing -join ', ')" }
+# The Arch package (for copies installed from 0.2.0's) goes along when it's there.
+$pacman = Join-Path $dist "vesper-$version-1-x86_64.pkg.tar.zst"
+if (Test-Path $pacman) { $assets += $pacman }
 
 # Sign what's being shipped.
 $dotnet = 'dotnet'
@@ -55,13 +60,13 @@ $details## Download
 |---|---|
 | Windows, Intel or AMD (most PCs) | **Vesper-$version-Setup-x64.exe** (installs for you, no admin rights) or Vesper-$version-win-x64.zip (portable) |
 | Windows on Snapdragon / ARM | **Vesper-$version-Setup-arm64.exe** or Vesper-$version-win-arm64.zip |
-| Arch Linux (x86_64) | **vesper-$version-1-x86_64.pkg.tar.zst**: ``sudo pacman -U vesper-$version-1-x86_64.pkg.tar.zst`` |
+| Linux (x86_64: Arch and others) | **Vesper-$version-x86_64.AppImage**: make it executable (``chmod +x``) and run it |
 
 Windows 10 version 2004 or later, or Windows 11. The Windows downloads aren't code-signed yet, so the first run may show "Windows protected your PC": choose **More info**, then **Run anyway**.
 
-On Arch, install **libsecret** and a keyring (gnome-keyring, or KWallet on KDE) to have Vesper remember Mac passwords, and **polkit** to install updates from inside the app.
+On Linux, Vesper remembers Mac passwords in your login keyring: on Arch, install **libsecret** and a keyring (gnome-keyring, or KWallet on KDE). Keep the AppImage somewhere you own (such as ~/Applications) so it can update itself.
 
-Vesper updates itself after this: it checks this page twice a day and installs a new version when you restart or quit it, only if it carries Vesper's release signature (vesper-update.json and its .sig).
+Vesper updates itself after this: it checks for a new release twice a day and installs a new version when you restart or quit it, only if it carries Vesper's release signature (vesper-update.json and its .sig).
 
 ## Checksums (SHA-256)
 

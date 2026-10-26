@@ -145,8 +145,10 @@ public sealed partial class SettingsWindow : Window, IDialogHost
         {
             UpdateStatus.Checking => ("Checking for updates…", $"You have Vesper {version}."),
             UpdateStatus.Downloading => ($"Downloading Vesper {offered}…", "It's checked against Vesper's release signature before it's used."),
-            UpdateStatus.Ready => ($"Vesper {offered} is ready to install", "Installing asks for your password, then Vesper restarts."),
-            UpdateStatus.Available => ($"Vesper {offered} is available", "This copy wasn't installed from Vesper's Arch package, so it can't update itself. Download the new version from its releases page."),
+            UpdateStatus.Ready => ($"Vesper {offered} is ready to install", InstallInfo.Kind == InstallKind.LinuxPackage
+                ? "Installing asks for your password (pacman), then Vesper restarts."
+                : "It installs when you restart Vesper, or the next time you quit it."),
+            UpdateStatus.Available => ($"Vesper {offered} is available", "This copy isn't running from Vesper's AppImage, so it can't update itself. Download the new version from its releases page."),
             UpdateStatus.Failed => ("Couldn't check for updates", u.Error ?? ""),
             UpdateStatus.UpToDate => ("Vesper is up to date", $"Version {version}" + (u.LastChecked is { } t ? $", checked at {t:HH:mm}." : ".")),
             _ => ("Updates", $"You have Vesper {version}."),
