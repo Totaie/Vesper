@@ -1,0 +1,163 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:v="using:Vesper.Linux.Views"
+        xmlns:c="using:Vesper.Linux.Controls"
+        x:Class="Vesper.Linux.Views.MainWindow"
+        x:DataType="v:MainWindow"
+        Title="Vesper"
+        Icon="/Assets/Vesper-256.png"
+        Width="1200" Height="820" MinWidth="720" MinHeight="560"
+        WindowStartupLocation="CenterScreen">
+
+    <Panel>
+        <Grid x:Name="Root" RowDefinitions="48,*">
+            <!-- An evening glow at the top of the window. -->
+            <Rectangle Grid.RowSpan="2" Height="420" VerticalAlignment="Top" IsHitTestVisible="False"
+                       Fill="{DynamicResource VesperGlowBrush}" />
+
+            <!-- Wordmark -->
+            <StackPanel Orientation="Horizontal" Spacing="10" Margin="20,0,0,0" VerticalAlignment="Center">
+                <Path Width="15" Height="15" Stretch="Uniform" Fill="{StaticResource VesperStarFillBrush}"
+                      Data="{StaticResource VesperStarGeometry}" />
+                <TextBlock Text="Vesper" FontFamily="{StaticResource VesperWordmarkFont}" FontSize="17"
+                           LetterSpacing="0.7" VerticalAlignment="Center" />
+            </StackPanel>
+
+            <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                <StackPanel MaxWidth="1180" Margin="44,10,44,36" Spacing="34">
+
+                    <!--
+                        UPDATES: the bar automatic updates will use. It stays collapsed (IsVisible="False")
+                        until updates are wired in; nothing here checks for or installs anything.
+                    -->
+                    <Border x:Name="UpdateBar" IsVisible="False" Classes="card" CornerRadius="10" Padding="16,12">
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+                            <c:Icon Data="{x:Static c:Icons.Refresh}" Size="18" Foreground="{DynamicResource VesperStarBrush}" VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock x:Name="UpdateTitle" Classes="strong" />
+                                <TextBlock x:Name="UpdateDetail" Classes="secondary caption wrap" />
+                            </StackPanel>
+                            <StackPanel x:Name="UpdateActions" Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" />
+                        </Grid>
+                    </Border>
+
+                    <!-- Header -->
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                        <StackPanel Spacing="4">
+                            <TextBlock x:Name="Greeting" Text="Good evening" Classes="display" FontSize="40" FontWeight="SemiLight" />
+                            <TextBlock x:Name="Subtitle" Text="Your Macs, a click away — fast and encrypted end to end."
+                                       Classes="secondary" FontSize="15" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <Button Classes="accent" Click="AddMac_Click" Padding="14,8" AutomationProperties.Name="Add a Mac">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <c:Icon Data="{x:Static c:Icons.Plus}" Size="14" StrokeThickness="1.8" VerticalAlignment="Center" />
+                                    <TextBlock Text="Add a Mac" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                            <Button Click="Settings_Click" Padding="10,8" ToolTip.Tip="Settings" AutomationProperties.Name="Settings">
+                                <c:Icon Data="{x:Static c:Icons.Settings}" Size="18" VerticalAlignment="Center" />
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- The Macs -->
+                    <ItemsControl x:Name="MacsList">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <c:CardGrid MinItemWidth="330" ItemHeight="318" Spacing="18" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="v:MacCardItem">
+                                <Border Classes="maccard" Background="{DynamicResource VesperCardBrush}" DoubleTapped="Card_DoubleTapped">
+                                    <Grid RowDefinitions="164,*">
+                                        <!-- Artwork -->
+                                        <Panel Background="{StaticResource VesperSkyBrush}">
+                                            <Path Width="9" Height="9" Stretch="Uniform" HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                  Margin="0,18,34,0" Fill="#E8FFF1D2" Data="{StaticResource VesperStarGeometry}" />
+                                            <Ellipse Width="2" Height="2" Fill="#99FFFFFF" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="40,26,0,0" />
+                                            <Ellipse Width="1.5" Height="1.5" Fill="#77FFFFFF" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="96,14,0,0" />
+                                            <Ellipse Width="2" Height="2" Fill="#66FFFFFF" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,44,88,0" />
+                                            <c:MacArt Height="112" Margin="0,22,0,0" VerticalAlignment="Center" />
+                                            <Border Classes="pill" Background="#33000000" Margin="12" HorizontalAlignment="Left" VerticalAlignment="Top">
+                                                <TextBlock Text="{Binding ModelName}" FontSize="12" Foreground="#E6FFFFFF" />
+                                            </Border>
+                                        </Panel>
+
+                                        <!-- Details -->
+                                        <Grid Grid.Row="1" Margin="18,14,14,14" RowDefinitions="Auto,Auto,Auto,*">
+                                            <TextBlock Text="{Binding Name}" Classes="subtitle" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Grid.Row="1" Text="{Binding Address}" Classes="secondary" Margin="0,3,0,0"
+                                                       TextTrimming="CharacterEllipsis" />
+                                            <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="6" Margin="0,9,0,0">
+                                                <c:Icon Data="{Binding SecurityIcon}" Size="13" VerticalAlignment="Center"
+                                                        Classes.verified="{Binding IsPinned}" Classes.unpinned="{Binding !IsPinned}" />
+                                                <TextBlock Text="{Binding SecurityText}" FontSize="12"
+                                                           Classes.verified="{Binding IsPinned}" Classes.unpinned="{Binding !IsPinned}" />
+                                                <TextBlock Text="·" FontSize="12" Classes="tertiary" />
+                                                <TextBlock Text="{Binding LastConnected}" FontSize="12" Classes="tertiary" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Bottom" Spacing="6">
+                                                <Button Classes="subtle" Padding="9,8" Click="More_Click" ToolTip.Tip="More"
+                                                        AutomationProperties.Name="More options">
+                                                    <c:Icon Data="{x:Static c:Icons.More}" IsFilled="True" Size="16" />
+                                                </Button>
+                                                <Button Classes="accent" Padding="16,7" Click="Connect_Click" AutomationProperties.Name="Connect">
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <TextBlock Text="Connect" VerticalAlignment="Center" />
+                                                        <c:Icon Data="{x:Static c:Icons.ArrowRight}" Size="13" StrokeThickness="1.7" VerticalAlignment="Center" />
+                                                    </StackPanel>
+                                                </Button>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- First run -->
+                    <Border x:Name="EmptyState" IsVisible="False" Classes="card" CornerRadius="14" ClipToBounds="True">
+                        <Grid ColumnDefinitions="380,*">
+                            <Panel Background="{StaticResource VesperSkyBrush}">
+                                <Path Width="11" Height="11" Stretch="Uniform" HorizontalAlignment="Right" VerticalAlignment="Top"
+                                      Margin="0,30,48,0" Fill="#E8FFF1D2" Data="{StaticResource VesperStarGeometry}" />
+                                <Ellipse Width="2" Height="2" Fill="#99FFFFFF" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="52,40,0,0" />
+                                <Ellipse Width="1.5" Height="1.5" Fill="#77FFFFFF" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="140,22,0,0" />
+                                <c:MacArt Margin="36,56,36,36" />
+                            </Panel>
+                            <StackPanel Grid.Column="1" Margin="36,32" Spacing="18">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="Add your first Mac" Classes="display" FontSize="28" />
+                                    <TextBlock Classes="secondary wrap"
+                                               Text="Vesper speaks Apple's own Screen Sharing protocol, so there's nothing to install on the Mac." />
+                                </StackPanel>
+                                <StackPanel Spacing="12">
+                                    <c:SetupStep Number="1" Text="On the Mac, open System Settings › General › Sharing and turn on Screen Sharing (or Remote Management)." />
+                                    <c:SetupStep Number="2" Text="Click ⓘ next to it and make sure your account is allowed. For an SSH tunnel, also turn on Remote Login." />
+                                    <c:SetupStep Number="3" Text="Add it here with its name (like studio.local) or IP address, and your Mac account." />
+                                </StackPanel>
+                                <Button Classes="accent" Click="AddMac_Click" Padding="16,8" HorizontalAlignment="Left">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <c:Icon Data="{x:Static c:Icons.Plus}" Size="14" StrokeThickness="1.8" VerticalAlignment="Center" />
+                                        <TextBlock Text="Add a Mac" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Promise -->
+                    <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center" Opacity="0.75" Margin="0,6,0,0">
+                        <c:Icon Data="{x:Static c:Icons.Shield}" Size="14" Foreground="{DynamicResource VesperTextSecondaryBrush}" VerticalAlignment="Center" />
+                        <TextBlock FontSize="12" Classes="secondary wrap" VerticalAlignment="Center"
+                                   Text="Private by design: Vesper talks only to the Macs you add. No accounts, no telemetry, no cloud." />
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+        <v:DialogLayer x:Name="Layer" />
+    </Panel>
+</Window>

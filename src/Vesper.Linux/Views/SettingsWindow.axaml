@@ -1,0 +1,183 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:v="using:Vesper.Linux.Views"
+        xmlns:c="using:Vesper.Linux.Controls"
+        x:Class="Vesper.Linux.Views.SettingsWindow"
+        Title="Vesper Settings"
+        Icon="/Assets/Vesper-256.png"
+        Width="900" Height="860" MinWidth="560" MinHeight="480"
+        WindowStartupLocation="CenterScreen">
+    <Window.Styles>
+        <Style Selector="Border.setting">
+            <Setter Property="Background" Value="{DynamicResource VesperCardBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource VesperCardStrokeBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="18,14" />
+            <Setter Property="MinHeight" Value="68" />
+        </Style>
+        <Style Selector="Border.setting > Grid">
+            <Setter Property="ColumnSpacing" Value="16" />
+        </Style>
+        <Style Selector="TextBlock.description">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Foreground" Value="{DynamicResource VesperTextSecondaryBrush}" />
+        </Style>
+        <Style Selector="TextBlock.section">
+            <Setter Property="Margin" Value="2,18,0,6" />
+        </Style>
+        <Style Selector="Border.setting c|Icon.lead">
+            <Setter Property="Size" Value="18" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+    </Window.Styles>
+
+    <Panel>
+        <Grid RowDefinitions="48,*">
+            <StackPanel Orientation="Horizontal" Spacing="10" Margin="20,0,0,0" VerticalAlignment="Center">
+                <Path Width="13" Height="13" Stretch="Uniform" Fill="{StaticResource VesperStarFillBrush}"
+                      Data="{StaticResource VesperStarGeometry}" />
+                <TextBlock Text="Settings" VerticalAlignment="Center" />
+            </StackPanel>
+
+            <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel MaxWidth="820" Margin="36,8,36,36" Spacing="6">
+                    <TextBlock Text="Settings" Classes="display" FontSize="34" Margin="0,0,0,14" />
+
+                    <TextBlock Text="Security and privacy" Classes="section" Margin="2,6,0,6" />
+                    <Border Classes="setting">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <c:Icon Classes="lead" Data="{x:Static c:Icons.Lock}" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="Lock saved passwords" />
+                                <TextBlock Classes="description" Text="Wipe unlocked passwords from memory after this long without an open session." />
+                            </StackPanel>
+                            <ComboBox x:Name="LockBox" Grid.Column="2" VerticalAlignment="Center" MinWidth="170"
+                                      SelectionChanged="Lock_Changed" AutomationProperties.Name="Lock saved passwords">
+                                <ComboBoxItem Content="After 5 minutes" Tag="5" />
+                                <ComboBoxItem Content="After 15 minutes" Tag="15" />
+                                <ComboBoxItem Content="After an hour" Tag="60" />
+                                <ComboBoxItem Content="After 8 hours" Tag="480" />
+                            </ComboBox>
+                        </Grid>
+                    </Border>
+                    <Border Classes="setting">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <c:Icon Classes="lead" Data="{x:Static c:Icons.Trash}" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="Forget every saved password" />
+                                <TextBlock Classes="description" Text="Deletes the password vault from this computer. Your Macs stay; you'll be asked for passwords again." />
+                            </StackPanel>
+                            <Button x:Name="ForgetAllButton" Grid.Column="2" Content="Forget passwords" Click="ForgetAll_Click" VerticalAlignment="Center" />
+                        </Grid>
+                    </Border>
+                    <Border x:Name="NoVaultCard" Classes="setting" IsVisible="False">
+                        <Grid ColumnDefinitions="Auto,*">
+                            <c:Icon Classes="lead warning" Data="{x:Static c:Icons.Key}" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="Passwords aren't saved on this computer" />
+                                <TextBlock x:Name="NoVaultText" Classes="description" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <TextBlock Text="Keyboard and mouse" Classes="section" />
+                    <Border Classes="setting">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <c:Icon Classes="lead" Data="{x:Static c:Icons.Mouse}" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="Scroll speed" />
+                                <TextBlock Classes="description" Text="Vesper sends the Mac precise, trackpad-like scrolls." />
+                            </StackPanel>
+                            <Slider x:Name="ScrollSlider" Grid.Column="2" Width="170" Minimum="0.25" Maximum="3" TickFrequency="0.25"
+                                    IsSnapToTickEnabled="True" VerticalAlignment="Center" ValueChanged="Scroll_Changed"
+                                    AutomationProperties.Name="Scroll speed" />
+                        </Grid>
+                    </Border>
+                    <Border Classes="setting">
+                        <Grid ColumnDefinitions="Auto,*">
+                            <c:Icon Classes="lead" Data="{x:Static c:Icons.Keyboard}" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="Shortcuts" />
+                                <TextBlock Classes="description"
+                                           Text="Ctrl+Alt+Enter toggles full screen. Shortcuts your desktop keeps for itself (the Super key, Alt+Tab and the like) stay with it; the Keys menu in a session sends the Mac's own." />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <TextBlock Text="Appearance" Classes="section" />
+                    <Border Classes="setting">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <c:Icon Classes="lead" Data="{x:Static c:Icons.Moon}" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="Theme" />
+                            </StackPanel>
+                            <ComboBox x:Name="ThemeBox" Grid.Column="2" VerticalAlignment="Center" MinWidth="170"
+                                      SelectionChanged="Theme_Changed" AutomationProperties.Name="Theme">
+                                <ComboBoxItem Content="Use system setting" />
+                                <ComboBoxItem Content="Dark" />
+                                <ComboBoxItem Content="Light" />
+                            </ComboBox>
+                        </Grid>
+                    </Border>
+                    <Border Classes="setting">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <c:Icon Classes="lead" Data="{x:Static c:Icons.Chart}" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="Show connection statistics" />
+                                <TextBlock Classes="description" Text="Frames per second, screen updates, bandwidth and round-trip time in the session's toolbar." />
+                            </StackPanel>
+                            <ToggleSwitch x:Name="StatsSwitch" Grid.Column="2" OnContent="" OffContent="" MinWidth="0"
+                                          VerticalAlignment="Center" IsCheckedChanged="Stats_Toggled"
+                                          AutomationProperties.Name="Show connection statistics" />
+                        </Grid>
+                    </Border>
+
+                    <!-- UPDATES: the lead wires automatic updates into this section; the setting is only stored for now. -->
+                    <TextBlock x:Name="UpdatesHeader" Text="Updates" Classes="section" />
+                    <Border x:Name="UpdatesCard" Classes="setting">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <c:Icon Classes="lead" Data="{x:Static c:Icons.Refresh}" />
+                            <StackPanel x:Name="UpdatesText" Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="Check for updates" />
+                                <TextBlock x:Name="UpdatesDescription" Classes="description"
+                                           Text="Look for a new version of Vesper from time to time." />
+                            </StackPanel>
+                            <CheckBox x:Name="UpdatesCheck" Grid.Column="2" VerticalAlignment="Center" Content="Automatically"
+                                      IsCheckedChanged="Updates_Toggled" AutomationProperties.Name="Check for updates" />
+                        </Grid>
+                    </Border>
+
+                    <TextBlock Text="About" Classes="section" />
+                    <Border Classes="setting" Padding="20">
+                        <StackPanel Spacing="10">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <Image Source="/Assets/Vesper-64.png" Width="40" Height="40" />
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Vesper" FontFamily="{StaticResource VesperWordmarkFont}" FontSize="20" />
+                                    <TextBlock x:Name="VersionText" Classes="description" />
+                                </StackPanel>
+                            </StackPanel>
+                            <TextBlock Classes="description"
+                                       Text="Named for the evening star: Hesperus to the Greeks, whose Hesperides kept the golden apples in a guarded garden at the edge of the world. Vesper speaks Apple's own Screen Sharing protocol (RFB 003.889) with its encrypted record layer, server-side scaling and pushed updates." />
+                            <TextBlock x:Name="PrivacyText" Classes="description" />
+                            <TextBlock Classes="description"
+                                       Text="Linux can't hide a window from screen capture. On Wayland, apps need your approval to record the screen; under X11, and between apps running through XWayland as Vesper does, any program you run can see its windows and keystrokes." />
+                            <Expander Header="Diagnostics (kept in memory only)" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                      Expanding="Diagnostics_Expanding">
+                                <StackPanel Spacing="8">
+                                    <TextBox x:Name="DiagnosticsBox" Classes="mono" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
+                                             MinHeight="120" MaxHeight="300" FontSize="12" />
+                                    <Button Content="Copy" Click="CopyDiagnostics_Click" HorizontalAlignment="Left" />
+                                </StackPanel>
+                            </Expander>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+        <v:DialogLayer x:Name="Layer" />
+    </Panel>
+</Window>

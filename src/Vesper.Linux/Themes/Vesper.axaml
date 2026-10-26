@@ -1,0 +1,214 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        Vesper's look, as on Windows: the evening star. A warm gold accent over quiet, Windows 11
+        style surfaces, and a twilight sky behind the Macs' artwork. The brushes are Vesper's own
+        (not the Fluent theme's), so both apps keep the same palette; the Fluent theme's own
+        controls pick up the accent through its palettes (see App.axaml).
+    -->
+    <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Dark">
+            <SolidColorBrush x:Key="VesperWindowBrush" Color="#1C1C21" />
+            <SolidColorBrush x:Key="VesperTextPrimaryBrush" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="VesperTextSecondaryBrush" Color="#C5FFFFFF" />
+            <SolidColorBrush x:Key="VesperTextTertiaryBrush" Color="#87FFFFFF" />
+            <SolidColorBrush x:Key="VesperCardBrush" Color="#0EFFFFFF" />
+            <SolidColorBrush x:Key="VesperCardSecondaryBrush" Color="#08FFFFFF" />
+            <SolidColorBrush x:Key="VesperCardStrokeBrush" Color="#14FFFFFF" />
+            <SolidColorBrush x:Key="VesperDialogBrush" Color="#2A2A30" />
+            <SolidColorBrush x:Key="VesperDialogFooterBrush" Color="#212126" />
+            <SolidColorBrush x:Key="VesperDialogStrokeBrush" Color="#24FFFFFF" />
+            <SolidColorBrush x:Key="VesperSmokeBrush" Color="#99000000" />
+            <SolidColorBrush x:Key="VesperFloatingBrush" Color="#F02A2A30" />
+            <SolidColorBrush x:Key="VesperToolbarHoverBrush" Color="#14FFFFFF" />
+            <SolidColorBrush x:Key="VesperToolbarPressedBrush" Color="#0AFFFFFF" />
+            <SolidColorBrush x:Key="VesperToolbarCheckedBrush" Color="#26E9A23B" />
+            <SolidColorBrush x:Key="VesperDividerBrush" Color="#14FFFFFF" />
+
+            <SolidColorBrush x:Key="VesperStarBrush" Color="#F4C67A" />
+            <SolidColorBrush x:Key="VesperAccentBrush" Color="#F4C67A" />
+            <SolidColorBrush x:Key="VesperOnAccentBrush" Color="#000000" />
+            <SolidColorBrush x:Key="VesperVerifiedBrush" Color="#5BD69B" />
+            <SolidColorBrush x:Key="VesperProtectedBrush" Color="#7FB8FF" />
+            <SolidColorBrush x:Key="VesperWarningBrush" Color="#F5B547" />
+            <SolidColorBrush x:Key="VesperDangerBrush" Color="#FF7A7A" />
+            <SolidColorBrush x:Key="VesperPillBackgroundBrush" Color="#1AFFFFFF" />
+            <SolidColorBrush x:Key="VesperCardHoverBorderBrush" Color="#55F4C67A" />
+            <!-- An evening glow at the top of the home window. -->
+            <LinearGradientBrush x:Key="VesperGlowBrush" StartPoint="50%,0%" EndPoint="50%,100%">
+                <GradientStop Offset="0" Color="#3A3B4FB8" />
+                <GradientStop Offset="1" Color="#003B4FB8" />
+            </LinearGradientBrush>
+
+            <!-- Notices, by severity -->
+            <SolidColorBrush x:Key="VesperNoticeInfoBrush" Color="#2E2E35" />
+            <SolidColorBrush x:Key="VesperNoticeSuccessBrush" Color="#263A2F" />
+            <SolidColorBrush x:Key="VesperNoticeWarningBrush" Color="#433519" />
+            <SolidColorBrush x:Key="VesperNoticeErrorBrush" Color="#442726" />
+            <SolidColorBrush x:Key="VesperNoticeInfoIconBrush" Color="#9DB8FF" />
+
+            <!-- The Fluent theme's controls: text on the gold accent is dark, as in Windows 11. -->
+            <SolidColorBrush x:Key="AccentButtonForeground" Color="#000000" />
+            <SolidColorBrush x:Key="AccentButtonForegroundPointerOver" Color="#000000" />
+            <SolidColorBrush x:Key="AccentButtonForegroundPressed" Color="#99000000" />
+            <SolidColorBrush x:Key="CheckBoxCheckGlyphForegroundChecked" Color="#000000" />
+            <SolidColorBrush x:Key="CheckBoxCheckGlyphForegroundCheckedPointerOver" Color="#000000" />
+            <SolidColorBrush x:Key="CheckBoxCheckGlyphForegroundCheckedPressed" Color="#99000000" />
+            <SolidColorBrush x:Key="ToggleSwitchKnobFillOn" Color="#000000" />
+            <SolidColorBrush x:Key="ToggleSwitchKnobFillOnPointerOver" Color="#000000" />
+            <SolidColorBrush x:Key="ToggleSwitchKnobFillOnPressed" Color="#000000" />
+            <SolidColorBrush x:Key="RadioButtonCheckGlyphFill" Color="#000000" />
+            <SolidColorBrush x:Key="RadioButtonCheckGlyphFillPointerOver" Color="#000000" />
+            <SolidColorBrush x:Key="RadioButtonCheckGlyphFillPressed" Color="#99000000" />
+
+            <!-- Windows 11's control fills and strokes, so buttons and fields sit as quietly as they do there. -->
+            <SolidColorBrush x:Key="AccentButtonBackground" Color="#F4C67A" />
+            <SolidColorBrush x:Key="AccentButtonBackgroundPointerOver" Color="#E6F4C67A" />
+            <SolidColorBrush x:Key="AccentButtonBackgroundPressed" Color="#CCF4C67A" />
+            <SolidColorBrush x:Key="ButtonBackground" Color="#0FFFFFFF" />
+            <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#15FFFFFF" />
+            <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#08FFFFFF" />
+            <SolidColorBrush x:Key="ButtonBackgroundDisabled" Color="#0BFFFFFF" />
+            <SolidColorBrush x:Key="ButtonBorderBrush" Color="#18FFFFFF" />
+            <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="#18FFFFFF" />
+            <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="#12FFFFFF" />
+            <SolidColorBrush x:Key="ButtonBorderBrushDisabled" Color="#12FFFFFF" />
+            <SolidColorBrush x:Key="ButtonForegroundPressed" Color="#C5FFFFFF" />
+            <SolidColorBrush x:Key="ComboBoxBackground" Color="#0FFFFFFF" />
+            <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#15FFFFFF" />
+            <SolidColorBrush x:Key="ComboBoxBackgroundPressed" Color="#08FFFFFF" />
+            <SolidColorBrush x:Key="ComboBoxBorderBrush" Color="#18FFFFFF" />
+            <SolidColorBrush x:Key="ComboBoxBorderBrushPointerOver" Color="#18FFFFFF" />
+            <SolidColorBrush x:Key="TextControlBackground" Color="#0FFFFFFF" />
+            <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#15FFFFFF" />
+            <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#B31E1E1E" />
+            <SolidColorBrush x:Key="TextControlBorderBrush" Color="#18FFFFFF" />
+            <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#24FFFFFF" />
+            <SolidColorBrush x:Key="ExpanderHeaderBackground" Color="#0DFFFFFF" />
+            <SolidColorBrush x:Key="ExpanderHeaderBackgroundPointerOver" Color="#15FFFFFF" />
+            <SolidColorBrush x:Key="ExpanderHeaderBackgroundPressed" Color="#08FFFFFF" />
+            <SolidColorBrush x:Key="ExpanderHeaderBorderBrush" Color="#14FFFFFF" />
+            <SolidColorBrush x:Key="ExpanderHeaderBorderBrushPointerOver" Color="#14FFFFFF" />
+            <SolidColorBrush x:Key="ExpanderHeaderBorderBrushPressed" Color="#14FFFFFF" />
+            <SolidColorBrush x:Key="ExpanderContentBackground" Color="#06FFFFFF" />
+            <SolidColorBrush x:Key="ExpanderContentBorderBrush" Color="#14FFFFFF" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Light">
+            <SolidColorBrush x:Key="VesperWindowBrush" Color="#F3F3F5" />
+            <SolidColorBrush x:Key="VesperTextPrimaryBrush" Color="#E4000000" />
+            <SolidColorBrush x:Key="VesperTextSecondaryBrush" Color="#9E000000" />
+            <SolidColorBrush x:Key="VesperTextTertiaryBrush" Color="#72000000" />
+            <SolidColorBrush x:Key="VesperCardBrush" Color="#B3FFFFFF" />
+            <SolidColorBrush x:Key="VesperCardSecondaryBrush" Color="#80F6F6F6" />
+            <SolidColorBrush x:Key="VesperCardStrokeBrush" Color="#12000000" />
+            <SolidColorBrush x:Key="VesperDialogBrush" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="VesperDialogFooterBrush" Color="#F3F3F3" />
+            <SolidColorBrush x:Key="VesperDialogStrokeBrush" Color="#1A000000" />
+            <SolidColorBrush x:Key="VesperSmokeBrush" Color="#4D000000" />
+            <SolidColorBrush x:Key="VesperFloatingBrush" Color="#F5FCFCFC" />
+            <SolidColorBrush x:Key="VesperToolbarHoverBrush" Color="#0F000000" />
+            <SolidColorBrush x:Key="VesperToolbarPressedBrush" Color="#08000000" />
+            <SolidColorBrush x:Key="VesperToolbarCheckedBrush" Color="#26C77D12" />
+            <SolidColorBrush x:Key="VesperDividerBrush" Color="#14000000" />
+
+            <SolidColorBrush x:Key="VesperStarBrush" Color="#C77D12" />
+            <SolidColorBrush x:Key="VesperAccentBrush" Color="#A8680A" />
+            <SolidColorBrush x:Key="VesperOnAccentBrush" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="VesperVerifiedBrush" Color="#16794A" />
+            <SolidColorBrush x:Key="VesperProtectedBrush" Color="#1F5FAD" />
+            <SolidColorBrush x:Key="VesperWarningBrush" Color="#9A5B00" />
+            <SolidColorBrush x:Key="VesperDangerBrush" Color="#B3261E" />
+            <SolidColorBrush x:Key="VesperPillBackgroundBrush" Color="#0F000000" />
+            <SolidColorBrush x:Key="VesperCardHoverBorderBrush" Color="#66C77D12" />
+            <LinearGradientBrush x:Key="VesperGlowBrush" StartPoint="50%,0%" EndPoint="50%,100%">
+                <GradientStop Offset="0" Color="#224A55C8" />
+                <GradientStop Offset="1" Color="#004A55C8" />
+            </LinearGradientBrush>
+
+            <SolidColorBrush x:Key="VesperNoticeInfoBrush" Color="#F9F9FB" />
+            <SolidColorBrush x:Key="VesperNoticeSuccessBrush" Color="#DFF6DD" />
+            <SolidColorBrush x:Key="VesperNoticeWarningBrush" Color="#FFF4CE" />
+            <SolidColorBrush x:Key="VesperNoticeErrorBrush" Color="#FDE7E9" />
+            <SolidColorBrush x:Key="VesperNoticeInfoIconBrush" Color="#1F5FAD" />
+
+            <SolidColorBrush x:Key="AccentButtonForeground" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="AccentButtonForegroundPointerOver" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="AccentButtonForegroundPressed" Color="#B3FFFFFF" />
+            <SolidColorBrush x:Key="CheckBoxCheckGlyphForegroundChecked" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="CheckBoxCheckGlyphForegroundCheckedPointerOver" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="CheckBoxCheckGlyphForegroundCheckedPressed" Color="#B3FFFFFF" />
+            <SolidColorBrush x:Key="ToggleSwitchKnobFillOn" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="ToggleSwitchKnobFillOnPointerOver" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="ToggleSwitchKnobFillOnPressed" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="RadioButtonCheckGlyphFill" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="RadioButtonCheckGlyphFillPointerOver" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="RadioButtonCheckGlyphFillPressed" Color="#B3FFFFFF" />
+
+            <SolidColorBrush x:Key="AccentButtonBackground" Color="#A8680A" />
+            <SolidColorBrush x:Key="AccentButtonBackgroundPointerOver" Color="#E6A8680A" />
+            <SolidColorBrush x:Key="AccentButtonBackgroundPressed" Color="#CCA8680A" />
+            <SolidColorBrush x:Key="ButtonBackground" Color="#B3FFFFFF" />
+            <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#80F9F9F9" />
+            <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#4DF9F9F9" />
+            <SolidColorBrush x:Key="ButtonBackgroundDisabled" Color="#4DF9F9F9" />
+            <SolidColorBrush x:Key="ButtonBorderBrush" Color="#1F000000" />
+            <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="#1F000000" />
+            <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="#0F000000" />
+            <SolidColorBrush x:Key="ButtonBorderBrushDisabled" Color="#0F000000" />
+            <SolidColorBrush x:Key="ButtonForegroundPressed" Color="#9E000000" />
+            <SolidColorBrush x:Key="ComboBoxBackground" Color="#B3FFFFFF" />
+            <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#80F9F9F9" />
+            <SolidColorBrush x:Key="ComboBoxBackgroundPressed" Color="#4DF9F9F9" />
+            <SolidColorBrush x:Key="ComboBoxBorderBrush" Color="#1F000000" />
+            <SolidColorBrush x:Key="ComboBoxBorderBrushPointerOver" Color="#1F000000" />
+            <SolidColorBrush x:Key="TextControlBackground" Color="#B3FFFFFF" />
+            <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#80F9F9F9" />
+            <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="TextControlBorderBrush" Color="#24000000" />
+            <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#33000000" />
+            <SolidColorBrush x:Key="ExpanderHeaderBackground" Color="#B3FFFFFF" />
+            <SolidColorBrush x:Key="ExpanderHeaderBackgroundPointerOver" Color="#80F9F9F9" />
+            <SolidColorBrush x:Key="ExpanderHeaderBackgroundPressed" Color="#4DF9F9F9" />
+            <SolidColorBrush x:Key="ExpanderHeaderBorderBrush" Color="#12000000" />
+            <SolidColorBrush x:Key="ExpanderHeaderBorderBrushPointerOver" Color="#12000000" />
+            <SolidColorBrush x:Key="ExpanderHeaderBorderBrushPressed" Color="#12000000" />
+            <SolidColorBrush x:Key="ExpanderContentBackground" Color="#80F6F6F6" />
+            <SolidColorBrush x:Key="ExpanderContentBorderBrush" Color="#12000000" />
+        </ResourceDictionary>
+    </ResourceDictionary.ThemeDictionaries>
+
+    <!-- The twilight sky behind each Mac's artwork. -->
+    <LinearGradientBrush x:Key="VesperSkyBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Offset="0" Color="#141638" />
+        <GradientStop Offset="0.5" Color="#2E2766" />
+        <GradientStop Offset="0.82" Color="#764A8C" />
+        <GradientStop Offset="1" Color="#D88470" />
+    </LinearGradientBrush>
+
+    <LinearGradientBrush x:Key="VesperScreenBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Offset="0" Color="#1B1E4E" />
+        <GradientStop Offset="0.6" Color="#5A3D8F" />
+        <GradientStop Offset="1" Color="#F09A6E" />
+    </LinearGradientBrush>
+
+    <LinearGradientBrush x:Key="VesperAluminumBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Offset="0" Color="#F1F2F5" />
+        <GradientStop Offset="1" Color="#B8BDC7" />
+    </LinearGradientBrush>
+
+    <LinearGradientBrush x:Key="VesperStarFillBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Offset="0" Color="#FFF6D6" />
+        <GradientStop Offset="1" Color="#F2AE4A" />
+    </LinearGradientBrush>
+
+    <StreamGeometry x:Key="VesperStarGeometry">M 50,0 Q 56,44 100,50 Q 56,56 50,100 Q 44,56 0,50 Q 44,44 50,0 Z</StreamGeometry>
+
+    <!-- Sitka is what the Windows app uses; Linux gets the first serif it has. -->
+    <FontFamily x:Key="VesperDisplayFont">Sitka Display, Georgia, Noto Serif Display, Noto Serif, Source Serif 4, DejaVu Serif, Liberation Serif, $Default</FontFamily>
+    <FontFamily x:Key="VesperWordmarkFont">Sitka Banner, Georgia, Noto Serif Display, Noto Serif, Source Serif 4, DejaVu Serif, Liberation Serif, $Default</FontFamily>
+    <FontFamily x:Key="VesperMonoFont">Cascadia Mono, JetBrains Mono, Fira Mono, Noto Sans Mono, DejaVu Sans Mono, Liberation Mono, Consolas, $Default</FontFamily>
+
+    <CornerRadius x:Key="ControlCornerRadius">4</CornerRadius>
+    <CornerRadius x:Key="OverlayCornerRadius">8</CornerRadius>
+</ResourceDictionary>

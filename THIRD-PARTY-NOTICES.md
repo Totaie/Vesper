@@ -66,3 +66,10 @@ SOFTWARE.
 
 Vesper's NuGet dependencies (Windows App SDK, Win2D, Microsoft.DevTunnels.Ssh) are Microsoft's,
 each under its own license, and are restored from nuget.org at build time.
+
+The Linux app (`src/Vesper.Linux`) is built with Avalonia (<https://avaloniaui.net>, MIT license,
+Copyright (c) AvaloniaUI OÜ), which brings SkiaSharp and HarfBuzzSharp (MIT, Copyright (c)
+Microsoft Corporation; with Skia under the BSD 3-Clause license and HarfBuzz under its "Old MIT"
+license), Tmds.DBus.Protocol (MIT) and MicroCom.Runtime (MIT). Its interface text is set in Inter
+(<https://rsms.me/inter>), Copyright (c) 2016 The Inter Project Authors, used under the SIL Open
+Font License 1.1 (<https://openfontlicense.org>), which travels inside the font's own metadata.

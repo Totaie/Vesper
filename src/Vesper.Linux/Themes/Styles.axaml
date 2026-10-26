@@ -1,0 +1,214 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:c="using:Vesper.Linux.Controls">
+
+    <Style Selector=":is(Window)">
+        <Setter Property="Background" Value="{DynamicResource VesperWindowBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource VesperTextPrimaryBrush}" />
+        <Setter Property="FontSize" Value="14" />
+    </Style>
+
+    <!-- Text -->
+    <Style Selector="TextBlock.secondary, SelectableTextBlock.secondary">
+        <Setter Property="Foreground" Value="{DynamicResource VesperTextSecondaryBrush}" />
+    </Style>
+    <Style Selector="TextBlock.tertiary">
+        <Setter Property="Foreground" Value="{DynamicResource VesperTextTertiaryBrush}" />
+    </Style>
+    <Style Selector="TextBlock.caption, SelectableTextBlock.caption">
+        <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="TextBlock.strong">
+        <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="TextBlock.subtitle">
+        <Setter Property="FontSize" Value="20" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="TextBlock.display">
+        <Setter Property="FontFamily" Value="{StaticResource VesperDisplayFont}" />
+    </Style>
+    <Style Selector="TextBlock.section">
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource VesperTextSecondaryBrush}" />
+        <Setter Property="Margin" Value="2,0,0,10" />
+    </Style>
+    <Style Selector="TextBlock.mono, SelectableTextBlock.mono, TextBox.mono">
+        <Setter Property="TextElement.FontFamily" Value="{StaticResource VesperMonoFont}" />
+    </Style>
+    <Style Selector="TextBlock.wrap, SelectableTextBlock.wrap">
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
+    <!-- What the security colours mean, wherever they're shown -->
+    <Style Selector="TextBlock.verified, c|Icon.verified">
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource VesperVerifiedBrush}" />
+    </Style>
+    <Style Selector="TextBlock.protected, c|Icon.protected">
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource VesperProtectedBrush}" />
+    </Style>
+    <Style Selector="TextBlock.warning, c|Icon.warning">
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource VesperWarningBrush}" />
+    </Style>
+    <Style Selector="TextBlock.danger, c|Icon.danger">
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource VesperDangerBrush}" />
+    </Style>
+    <Style Selector="TextBlock.unpinned, c|Icon.unpinned">
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource VesperTextSecondaryBrush}" />
+    </Style>
+
+    <Style Selector="c|Spinner">
+        <Setter Property="Brush" Value="{DynamicResource VesperAccentBrush}" />
+        <Style.Animations>
+            <Animation Duration="0:0:0.9" IterationCount="Infinite">
+                <KeyFrame Cue="0%">
+                    <Setter Property="RotateTransform.Angle" Value="0" />
+                </KeyFrame>
+                <KeyFrame Cue="100%">
+                    <Setter Property="RotateTransform.Angle" Value="360" />
+                </KeyFrame>
+            </Animation>
+        </Style.Animations>
+    </Style>
+
+    <!-- Surfaces -->
+    <Style Selector="Border.card">
+        <Setter Property="Background" Value="{DynamicResource VesperCardBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource VesperCardStrokeBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="8" />
+    </Style>
+    <Style Selector="Border.maccard">
+        <Setter Property="Background" Value="{DynamicResource VesperCardBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource VesperCardStrokeBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="12" />
+        <Setter Property="ClipToBounds" Value="True" />
+        <Setter Property="RenderTransform" Value="translateY(0px)" />
+        <Setter Property="Transitions">
+            <Transitions>
+                <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.15" Easing="CubicEaseOut" />
+                <BrushTransition Property="BorderBrush" Duration="0:0:0.15" />
+            </Transitions>
+        </Setter>
+    </Style>
+    <Style Selector="Border.maccard:pointerover">
+        <Setter Property="BorderBrush" Value="{DynamicResource VesperCardHoverBorderBrush}" />
+        <Setter Property="RenderTransform" Value="translateY(-3px)" />
+    </Style>
+    <Style Selector="Border.pill">
+        <Setter Property="CornerRadius" Value="10" />
+        <Setter Property="Padding" Value="8,3,10,3" />
+        <Setter Property="Background" Value="{DynamicResource VesperPillBackgroundBrush}" />
+    </Style>
+    <Style Selector="Border.mono-box">
+        <Setter Property="Background" Value="{DynamicResource VesperCardSecondaryBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource VesperCardStrokeBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Padding" Value="14,12" />
+    </Style>
+
+    <!-- Toolbar buttons: flat until hovered -->
+    <Style Selector="Button.toolbar, ToggleButton.toolbar, DropDownButton.toolbar">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="10,6" />
+        <Setter Property="MinWidth" Value="38" />
+        <Setter Property="Height" Value="34" />
+        <Setter Property="CornerRadius" Value="6" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Foreground" Value="{DynamicResource VesperTextPrimaryBrush}" />
+    </Style>
+    <Style Selector="DropDownButton.toolbar">
+        <Setter Property="Padding" Value="10,6,6,6" />
+    </Style>
+    <Style Selector="Button.toolbar:pointerover /template/ ContentPresenter#PART_ContentPresenter, ToggleButton.toolbar:pointerover /template/ ContentPresenter#PART_ContentPresenter, DropDownButton.toolbar:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource VesperToolbarHoverBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource VesperTextPrimaryBrush}" />
+    </Style>
+    <Style Selector="Button.toolbar:pressed /template/ ContentPresenter#PART_ContentPresenter, ToggleButton.toolbar:pressed /template/ ContentPresenter#PART_ContentPresenter, DropDownButton.toolbar:pressed /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource VesperToolbarPressedBrush}" />
+    </Style>
+    <Style Selector="ToggleButton.toolbar:checked /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource VesperToolbarCheckedBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource VesperStarBrush}" />
+    </Style>
+    <Style Selector="ToggleButton.toolbar:checked:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource VesperToolbarCheckedBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource VesperStarBrush}" />
+    </Style>
+
+    <!-- A quiet button with no frame (the ⋯ on cards) -->
+    <Style Selector="Button.subtle">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="Button.subtle:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource VesperToolbarHoverBrush}" />
+    </Style>
+
+    <!-- Notices (WinUI's InfoBar) -->
+    <Style Selector="Border.notice">
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="BorderBrush" Value="{DynamicResource VesperCardStrokeBrush}" />
+        <Setter Property="Padding" Value="14,10,8,10" />
+        <Setter Property="Background" Value="{DynamicResource VesperNoticeInfoBrush}" />
+        <Setter Property="BoxShadow" Value="0 6 20 0 #33000000" />
+    </Style>
+    <Style Selector="Border.notice.success">
+        <Setter Property="Background" Value="{DynamicResource VesperNoticeSuccessBrush}" />
+    </Style>
+    <Style Selector="Border.notice.warning">
+        <Setter Property="Background" Value="{DynamicResource VesperNoticeWarningBrush}" />
+    </Style>
+    <Style Selector="Border.notice.error">
+        <Setter Property="Background" Value="{DynamicResource VesperNoticeErrorBrush}" />
+    </Style>
+    <Style Selector="Border.notice.inline">
+        <Setter Property="BoxShadow" Value="none" />
+    </Style>
+    <Style Selector="Border.notice c|Icon#NoticeIcon">
+        <Setter Property="Foreground" Value="{DynamicResource VesperNoticeInfoIconBrush}" />
+    </Style>
+    <Style Selector="Border.notice.success c|Icon#NoticeIcon">
+        <Setter Property="Foreground" Value="{DynamicResource VesperVerifiedBrush}" />
+    </Style>
+    <Style Selector="Border.notice.warning c|Icon#NoticeIcon">
+        <Setter Property="Foreground" Value="{DynamicResource VesperWarningBrush}" />
+    </Style>
+    <Style Selector="Border.notice.error c|Icon#NoticeIcon">
+        <Setter Property="Foreground" Value="{DynamicResource VesperDangerBrush}" />
+    </Style>
+
+    <!-- Dialogs (WinUI's ContentDialog) -->
+    <Style Selector="Border.dialog-smoke">
+        <Setter Property="Background" Value="{DynamicResource VesperSmokeBrush}" />
+    </Style>
+    <Style Selector="Border.dialog-card">
+        <Setter Property="Background" Value="{DynamicResource VesperDialogBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource VesperDialogStrokeBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="10" />
+        <Setter Property="BoxShadow" Value="0 18 56 0 #66000000" />
+        <Setter Property="ClipToBounds" Value="True" />
+    </Style>
+    <Style Selector="Border.dialog-footer">
+        <Setter Property="Background" Value="{DynamicResource VesperDialogFooterBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource VesperDividerBrush}" />
+        <Setter Property="BorderThickness" Value="0,1,0,0" />
+        <Setter Property="Padding" Value="24" />
+    </Style>
+
+    <Style Selector="Border.step-number">
+        <Setter Property="Background" Value="{DynamicResource VesperAccentBrush}" />
+    </Style>
+    <Style Selector="Border.step-number > TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource VesperOnAccentBrush}" />
+    </Style>
+
+    <Style Selector="Separator">
+        <Setter Property="Background" Value="{DynamicResource VesperDividerBrush}" />
+    </Style>
+</Styles>
