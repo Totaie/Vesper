@@ -25,7 +25,7 @@ public sealed partial class MainWindow : Window
         WindowChrome.Prepare(this, TitleBar, width: 1200, height: 820, minWidth: 720, minHeight: 560);
         MacsRepeater.ItemsSource = _macs;
         NearbyRepeater.ItemsSource = _nearby;
-        App.Current.Data.ProfilesChanged += () => DispatcherQueue.TryEnqueue(Refresh);
+        App.Current.Data.ProfilesChanged += OnProfilesChanged;
         Activated += (_, e) =>
         {
             if (e.WindowActivationState != WindowActivationState.Deactivated) UpdateGreeting();
@@ -34,6 +34,7 @@ public sealed partial class MainWindow : Window
         Closed += (_, _) =>
         {
             App.Current.Updates.Changed -= OnUpdateChanged;
+            App.Current.Data.ProfilesChanged -= OnProfilesChanged;
             _discovery?.Dispose();
             App.Current.MainClosed();
         };
@@ -220,6 +221,8 @@ public sealed partial class MainWindow : Window
     private void Settings_Click(object sender, RoutedEventArgs e) => SettingsWindow.Show();
 
     private void OnUpdateChanged() => DispatcherQueue.TryEnqueue(RefreshUpdateBar);
+
+    private void OnProfilesChanged() => DispatcherQueue.TryEnqueue(Refresh);
 
     private void RefreshUpdateBar()
     {

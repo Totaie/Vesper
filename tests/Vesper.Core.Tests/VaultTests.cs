@@ -81,6 +81,51 @@ public sealed class VaultTests : IDisposable
     }
 
     [Fact]
+    public async Task Windows_unlocking_at_once_share_one_unlock()
+    {
+        var protector = new CountingProtector(Protector());
+        string path = Path.Combine(_folder, "vault.bin");
+        var mac = new MacProfile { Host = "studio.local", Username = "me" };
+        var first = new SecretVault(path, protector);
+        Assert.True(await first.UnlockAsync());
+        first.SetPassword(mac, "secret");
+
+        var vault = new SecretVault(path, protector);
+        protector.Unprotects = 0;
+        var a = vault.UnlockAsync();
+        var b = vault.UnlockAsync();
+        Assert.True(await a && await b);
+        Assert.Equal(1, protector.Unprotects);
+    }
+
+    [Fact]
+    public void A_second_copy_hands_over_to_the_first()
+    {
+        Assert.SkipUnless(OperatingSystem.IsLinux() || OperatingSystem.IsWindows(), "Unix domain sockets");
+        int shown = 0;
+        using var first = SingleInstance.Claim(_folder, () => Interlocked.Increment(ref shown));
+        Assert.NotNull(first);
+        Assert.Null(SingleInstance.Claim(_folder, () => { }));
+        SpinWait.SpinUntil(() => Volatile.Read(ref shown) == 1, TimeSpan.FromSeconds(5));
+        Assert.Equal(1, shown);
+    }
+
+    private sealed class CountingProtector(IVaultKeyProtector inner) : IVaultKeyProtector
+    {
+        public int Unprotects;
+        public bool IsAvailable => inner.IsAvailable;
+        public string UnavailableReason => inner.UnavailableReason;
+        public byte[] Protect(byte[] data) => inner.Protect(data);
+        public byte[] Unprotect(byte[] data)
+        {
+            Interlocked.Increment(ref Unprotects);
+            Thread.Sleep(50);
+            return inner.Unprotect(data);
+        }
+        public void Forget() => inner.Forget();
+    }
+
+    [Fact]
     public void Settings_from_disk_are_brought_back_into_range()
     {
         File.WriteAllText(Path.Combine(_folder, "settings.json"), """{ "ScrollSpeed": 1e308, "LockAfterMinutes": 999999999 }""");

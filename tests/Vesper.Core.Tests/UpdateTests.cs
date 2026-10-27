@@ -111,6 +111,19 @@ public sealed class UpdateTests : IDisposable
     }
 
     [Fact]
+    public async Task A_ready_update_survives_a_check_that_fails()
+    {
+        var (service, http) = Service(Manifest("0.9.0"));
+        await service.CheckAsync(manual: true);
+        Assert.Equal(UpdateStatus.Ready, service.Status);
+        http.Offline = true;
+        await service.CheckAsync(manual: true);
+        Assert.Equal(UpdateStatus.Ready, service.Status);
+        Assert.Equal("0.9.0", service.Offer?.Version);
+        Assert.True(File.Exists(service.DownloadedFile));
+    }
+
+    [Fact]
     public async Task A_skipped_version_is_offered_again_only_when_asked()
     {
         var (service, _) = Service(Manifest("0.9.0"));
@@ -220,10 +233,12 @@ public sealed class UpdateTests : IDisposable
         public List<string> Requests { get; } = [];
         public byte[] Installer { get; set; } = installer;
         public bool HideLength { get; set; }
+        public bool Offline { get; set; }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             string url = request.RequestUri!.ToString();
+            if (Offline) throw new HttpRequestException("offline");
             lock (Requests) Requests.Add(url);
             Assert.StartsWith("https://github.com/Totaie/Vesper/releases/", url);
             HttpContent content = url.EndsWith("/vesper-update.json") ? new ByteArrayContent(manifest)

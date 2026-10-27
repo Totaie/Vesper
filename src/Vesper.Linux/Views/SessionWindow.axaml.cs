@@ -51,7 +51,8 @@ public sealed partial class SessionWindow : Window, ITrustPrompts, IDialogHost
     private bool _sizedToMac;
     private string _loggedCodec = "";
     private (int Width, int Height) _fitTarget;
-    private PointerButtons _lastButtons;
+    /// <summary>The buttons the Mac has been told are down: changed only by their own press and release.</summary>
+    private PointerButtons _held;
     private int _lastX, _lastY;
 
     /// <summary>The Mac has proven itself: only now are its screen shown and input sent.</summary>
@@ -62,6 +63,8 @@ public sealed partial class SessionWindow : Window, ITrustPrompts, IDialogHost
     private static readonly TimeSpan[] ReconnectDelays = [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(15)];
     private int _reconnectAttempt;
     private bool _wasSecured;
+    private DateTime _securedAt;
+    private bool _connecting;
     private CancellationTokenSource? _reconnectWait;
 
     internal static void Open(MacProfile profile, string? password)
@@ -103,8 +106,11 @@ public sealed partial class SessionWindow : Window, ITrustPrompts, IDialogHost
         Surface.LostFocus += (_, _) => ReleaseKeys();
         Surface.PointerMoved += OnPointer;
         Surface.PointerPressed += OnPointerPressed;
-        Surface.PointerReleased += OnPointer;
-        Surface.PointerCaptureLost += (_, _) => ReleaseButtons();
+        Surface.PointerReleased += OnPointerReleased;
+        // Not a release: X11 and XWayland drop the capture during ordinary clicks, and treating that
+        // as letting go made the next move press the button again (a second right-click closing the
+        // menu the first opened). A button really released elsewhere shows up as up on the next move.
+        Surface.PointerCaptureLost += (_, _) => { };
         Surface.PointerWheelChanged += OnWheel;
         // Tunnelling, and even if something above marked them handled: while the Mac's screen has
         // focus every key is the Mac's (no Tab focus moves, no Alt menu access, no accelerators).
@@ -118,7 +124,12 @@ public sealed partial class SessionWindow : Window, ITrustPrompts, IDialogHost
         Closed += OnClosed;
         _statsTimer.Tick += (_, _) => UpdateStats();
         _refitTimer.Tick += (_, _) => Refit();
-        _floatingTimer.Tick += (_, _) => { _floatingTimer.Stop(); if (_fullScreen) FloatingBar.IsVisible = false; };
+        _floatingTimer.Tick += (_, _) =>
+        {
+            _floatingTimer.Stop();
+            if (FloatingBar.IsPointerOver) _floatingTimer.Start(); // not while it's being used
+            else if (_fullScreen) FloatingBar.IsVisible = false;
+        };
         _noticeTimer.Tick += (_, _) => { _noticeTimer.Stop(); HideNotice(); };
 
         Opened += async (_, _) =>
@@ -133,10 +144,13 @@ public sealed partial class SessionWindow : Window, ITrustPrompts, IDialogHost
         base.OnPropertyChanged(change);
         // The window manager can take a window out of full screen itself (a desktop shortcut, say):
         // the toolbar comes back with it.
-        if (change.Property == WindowStateProperty && _fullScreen && WindowState != WindowState.FullScreen)
+        // A minimised full-screen window comes back full screen, so minimising changes nothing;
+        // anything else the window manager does (in either direction) is followed.
+        if (change.Property == WindowStateProperty && WindowState != WindowState.Minimized
+            && (WindowState == WindowState.FullScreen) != _fullScreen)
         {
-            _fullScreen = false;
-            ApplyFullScreenChrome(false);
+            _fullScreen = WindowState == WindowState.FullScreen;
+            ApplyFullScreenChrome(_fullScreen);
         }
     }
 
@@ -144,12 +158,32 @@ public sealed partial class SessionWindow : Window, ITrustPrompts, IDialogHost
 
     private SessionInfo? Info => _connection?.Session.Info;
 
+    /// <summary>Whether a session is up (the vault stays unlocked only for those).</summary>
+    internal bool IsConnected => _connection is not null;
+
     private static App Vesper => App.Current;
 
     // ───────────────────────────── Connecting ─────────────────────────────
 
     private async Task ConnectAsync(bool automatic = false)
     {
+        if (_connecting || _connection is not null) return;
+        _connecting = true;
+        try
+        {
+            await ConnectCoreAsync(automatic);
+        }
+        finally
+        {
+            _connecting = false;
+        }
+    }
+
+    private async Task ConnectCoreAsync(bool automatic)
+    {
+        // The Mac may have been edited from the home window since this window opened.
+        if (Vesper.Data.Find(_profile.Id) is { } stored && !ReferenceEquals(stored, _profile)) CopyProfile(stored, _profile);
+        _keys.Layout = _profile.Modifiers;
         ShowConnecting(automatic);
         string? password = _password;
         _password = null;
@@ -208,7 +242,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts, IDialogHost
                 return;
             }
             _password = _typedPassword.Value.Password;
-            await ConnectAsync();
+            await ConnectCoreAsync(false);
             return;
         }
         catch (SavedPasswordWithheldException e)
@@ -222,7 +256,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts, IDialogHost
                 return;
             }
             _password = _typedPassword.Value.Password;
-            await ConnectAsync();
+            await ConnectCoreAsync(false);
             return;
         }
         catch (OperationCanceledException) when (_closing)
@@ -236,13 +270,14 @@ public sealed partial class SessionWindow : Window, ITrustPrompts, IDialogHost
             Diagnostics.Add($"Connection to {_profile.Host} timed out during a trust prompt; retrying.");
             // A saved password is fetched (and judged as saved) again, never passed on as typed.
             _password = fromVault ? null : password;
-            await ConnectAsync();
+            await ConnectCoreAsync(false);
             return;
         }
         catch (Exception e) when (automatic && IsDrop(e) && !_closing)
         {
             Diagnostics.Add($"Reconnecting to {_profile.Host} failed: {e.GetType().Name}: {e.Message}");
-            await ReconnectSoonAsync(Explain(e, duringSession: true));
+            // After this attempt has finished, so the next one isn't refused as a second connection.
+            _ = ReconnectSoonAsync(Explain(e, duringSession: true));
             return;
         }
         catch (Exception e)
@@ -325,7 +360,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts, IDialogHost
         ShowSecurity(connection.Security, session.Info);
         Remember(p => p.LastConnected = DateTimeOffset.Now);
         _wasSecured = true;
-        _reconnectAttempt = 0;
+        _securedAt = DateTime.UtcNow;
         Overlay.IsVisible = false;
         Surface.Focus();
         UpdateTitle();
@@ -352,13 +387,24 @@ public sealed partial class SessionWindow : Window, ITrustPrompts, IDialogHost
         {
             if (e is SecurityRefusedException) title = "Connection stopped";
             reason = Explain(e, duringSession: true);
-            dropped = IsDrop(e);
+            // The network failing, not the Mac ending the session (a clean close is someone at the
+            // Mac disconnecting Vesper, which mustn't bring it straight back).
+            dropped = e is IOException or SocketException or TimeoutException;
             Diagnostics.Add($"Session with {_profile.Host} ended: {e.GetType().Name}: {e.Message}");
         }
         if (_closing) return;
+        if (_connection != connection)
+        {
+            // A connection that lost a race to another: close it, leave the live one alone.
+            await connection.DisposeAsync();
+            return;
+        }
         await TearDownAsync();
         if (dropped && _wasSecured && _profile.HasSavedPassword)
         {
+            // A session that stayed up a while starts the retries afresh; one that keeps dying at
+            // once runs out of them.
+            if (DateTime.UtcNow - _securedAt > TimeSpan.FromSeconds(30)) _reconnectAttempt = 0;
             await ReconnectSoonAsync(reason);
             return;
         }
@@ -924,29 +970,55 @@ public sealed partial class SessionWindow : Window, ITrustPrompts, IDialogHost
         | (p.IsRightButtonPressed ? PointerButtons.Right : 0)
         | (p.IsMiddleButtonPressed ? PointerButtons.Middle : 0);
 
+    /// <summary>The button a press or release event is about.</summary>
+    private static PointerButtons ButtonOf(PointerUpdateKind kind) => kind switch
+    {
+        PointerUpdateKind.LeftButtonPressed or PointerUpdateKind.LeftButtonReleased => PointerButtons.Left,
+        PointerUpdateKind.RightButtonPressed or PointerUpdateKind.RightButtonReleased => PointerButtons.Right,
+        PointerUpdateKind.MiddleButtonPressed or PointerUpdateKind.MiddleButtonReleased => PointerButtons.Middle,
+        _ => PointerButtons.None,
+    };
+
     private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
+        // Ctrl held from before the window had focus is still a Command-click.
+        if (_connection is not null && _secured) SyncModifiers(e.KeyModifiers, PhysicalKey.None);
         Surface.Focus(NavigationMethod.Pointer);
         e.Pointer.Capture(Surface);
-        OnPointer(sender, e);
+        _held |= ButtonOf(e.GetCurrentPoint(Surface).Properties.PointerUpdateKind);
+        SendPointer(e);
+    }
+
+    private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        _held &= ~ButtonOf(e.GetCurrentPoint(Surface).Properties.PointerUpdateKind);
+        SendPointer(e);
     }
 
     private void OnPointer(object? sender, PointerEventArgs e)
     {
+        // A move never presses a button (only a press does), but it can show that one was let go
+        // where Vesper didn't see the release, such as outside the window after the capture went.
+        _held &= Buttons(e.GetCurrentPoint(Surface).Properties);
+        SendPointer(e);
+    }
+
+    private void SendPointer(PointerEventArgs e)
+    {
         var point = e.GetCurrentPoint(Surface);
         if (_fullScreen && point.Position.Y < 4) RevealFloatingBar();
         if (_connection is null || !_secured || !ToFramebuffer(point.Position, out int x, out int y)) return;
-        _lastButtons = Buttons(point.Properties);
         (_lastX, _lastY) = (x, y);
-        _connection.Session.SendPointer(x, y, _lastButtons);
+        _connection.Session.SendPointer(x, y, _held);
         e.Handled = true;
     }
 
-    /// <summary>A lost capture (another window grabbed the mouse) lets go of the buttons on the Mac too.</summary>
+    /// <summary>Lets go of every button on the Mac (the window lost focus, or the session ended).</summary>
     private void ReleaseButtons()
     {
-        if (_lastButtons == PointerButtons.None || _connection is null || !_secured) return;
-        _lastButtons = PointerButtons.None;
+        if (_held == PointerButtons.None) return;
+        _held = PointerButtons.None;
+        if (_connection is null || !_secured) return;
         _connection.Session.SendPointer(_lastX, _lastY, PointerButtons.None);
     }
 
@@ -954,7 +1026,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts, IDialogHost
     {
         if (_connection is null || !_secured) return;
         var point = e.GetCurrentPoint(Surface);
-        var buttons = Buttons(point.Properties);
+        var buttons = _held;
         // A notch (Delta 1) scrolls about 40 points; touchpads send smaller steps for smooth scrolling.
         double speed = Vesper.Data.Settings.ScrollSpeed;
         if (ToFramebuffer(point.Position, out int x, out int y))
@@ -971,7 +1043,11 @@ public sealed partial class SessionWindow : Window, ITrustPrompts, IDialogHost
     private void SetActive(bool active)
     {
         _active = active;
-        if (!active) ReleaseKeys();
+        if (!active)
+        {
+            ReleaseKeys();
+            ReleaseButtons();
+        }
         _clipboard?.SetActive(active);
     }
 
@@ -981,6 +1057,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts, IDialogHost
         if (_connection is null || !_secured || Layer.HasOpenDialog) return;
         e.Handled = true;
         if (HandleLocalShortcut(e)) return;
+        SyncModifiers(e.KeyModifiers, e.PhysicalKey);
         Send(e.PhysicalKey, e.Key, e.KeySymbol, down: true);
     }
 
@@ -995,7 +1072,9 @@ public sealed partial class SessionWindow : Window, ITrustPrompts, IDialogHost
     /// <summary>Ctrl+Alt+Enter toggles full screen, here rather than on the Mac.</summary>
     private bool HandleLocalShortcut(KeyEventArgs e)
     {
-        if (!_keys.CtrlDown || !_keys.AltDown) return false;
+        // From the event, not Vesper's own tracking: Ctrl and Alt may have been held since before
+        // a focus change or the last toggle.
+        if (!e.KeyModifiers.HasFlag(KeyModifiers.Control) || !e.KeyModifiers.HasFlag(KeyModifiers.Alt)) return false;
         if (e.PhysicalKey is PhysicalKey.Enter or PhysicalKey.NumPadEnter || e.Key == Key.Enter)
         {
             ReleaseKeys();
@@ -1003,6 +1082,18 @@ public sealed partial class SessionWindow : Window, ITrustPrompts, IDialogHost
             return true;
         }
         return false;
+    }
+
+    /// <summary>
+    /// Tells the Mac about modifiers pressed or let go while Vesper wasn't looking (in another
+    /// window, or during a local shortcut), so a held Ctrl still makes the next key a shortcut.
+    /// </summary>
+    private void SyncModifiers(KeyModifiers held, PhysicalKey current)
+    {
+        _keyBuffer.Clear();
+        _keys.Sync(held, current, _keyBuffer);
+        if (_connection is not { } c) return;
+        foreach (var (keysym, isDown) in _keyBuffer) c.Session.SendKey(keysym, isDown);
     }
 
     private void Send(PhysicalKey physical, Key key, string? symbol, bool down)

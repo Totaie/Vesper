@@ -57,6 +57,33 @@ internal sealed class KeyMapper
         output.Add((keysym, true));
     }
 
+    /// <summary>
+    /// Brings the modifiers Vesper believes are held in line with what the event says is held,
+    /// adding the presses and releases to send. <paramref name="current"/> is the key being
+    /// handled: X11 reports its state from before the event, so it's left to its own press.
+    /// </summary>
+    public void Sync(KeyModifiers held, PhysicalKey current, List<(uint Keysym, bool Down)> output)
+    {
+        Fix(PhysicalKey.ShiftLeft, PhysicalKey.ShiftRight, ShiftDown, held.HasFlag(KeyModifiers.Shift));
+        Fix(PhysicalKey.ControlLeft, PhysicalKey.ControlRight, CtrlDown, held.HasFlag(KeyModifiers.Control));
+        Fix(PhysicalKey.AltLeft, PhysicalKey.AltRight, AltDown, held.HasFlag(KeyModifiers.Alt));
+        Fix(PhysicalKey.MetaLeft, PhysicalKey.MetaRight, SuperDown, held.HasFlag(KeyModifiers.Meta));
+
+        void Fix(PhysicalKey left, PhysicalKey right, bool tracked, bool actual)
+        {
+            if (current == left || current == right || tracked == actual) return;
+            if (actual)
+            {
+                Translate(left, Key.None, null, true, output);
+            }
+            else
+            {
+                Translate(left, Key.None, null, false, output);
+                Translate(right, Key.None, null, false, output);
+            }
+        }
+    }
+
     /// <summary>Releases every key the Mac still believes is held (on focus loss, or disconnect).</summary>
     public void ReleaseAll(List<(uint Keysym, bool Down)> output)
     {

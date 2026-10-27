@@ -25,6 +25,14 @@ internal sealed unsafe class KeyMapper
     private readonly Dictionary<uint, uint> _pressed = [];
     private bool _lshift, _rshift, _lctrl, _rctrl, _lalt, _ralt, _lwin, _rwin;
 
+    /// <summary>
+    /// AltGr is down. Windows reports it as a made-up left Ctrl followed at once by right Alt; it
+    /// types the layout's third-level characters (@ { [ on many European layouts), so the Mac gets
+    /// those characters, not Command-Option.
+    /// </summary>
+    private bool _altGr;
+    private long _lctrlDownAt;
+
     public ModifierLayout Layout { get; set; } = ModifierLayout.MacStyle;
 
     /// <summary>
@@ -42,19 +50,42 @@ internal sealed unsafe class KeyMapper
     public void Translate(uint vk, uint scanCode, bool extended, bool down, List<(uint Keysym, bool Down)> output)
     {
         vk = Specific(vk, scanCode, extended);
-        uint id = scanCode | (extended ? 0x10000u : 0) | (vk << 17);
+        // Modifiers are known by key alone, so one pressed in sync (with no scan code) is released
+        // by its real key-up.
+        uint id = IsModifier(vk) ? vk << 17 : scanCode | (extended ? 0x10000u : 0) | (vk << 17);
+        bool wasLctrl = _lctrl;
         TrackModifier(vk, down);
+        if (vk == VkLControl && down && !wasLctrl) _lctrlDownAt = System.Diagnostics.Stopwatch.GetTimestamp();
         if (vk is VkLWin or VkRWin && !SendWindowsKey) return;
+
+        if (vk == VkRMenu && down && !_altGr && _lctrl
+            && System.Diagnostics.Stopwatch.GetElapsedTime(_lctrlDownAt) < TimeSpan.FromMilliseconds(60))
+        {
+            _altGr = true;
+            // The made-up Ctrl already went to the Mac (as Command): take it back.
+            if (_pressed.Remove(VkLControl << 17, out uint command)) output.Add((command, false));
+            return;
+        }
+        if (_altGr && vk is VkRMenu or VkLControl)
+        {
+            if (vk == VkRMenu && !down) _altGr = false;
+            return;
+        }
 
         if (!down)
         {
             if (_pressed.Remove(id, out uint sent)) output.Add((sent, false));
             return;
         }
+        if (_pressed.TryGetValue(id, out uint held))
+        {
+            output.Add((held, true)); // a repeat sends what the press sent, so the release matches
+            return;
+        }
 
         uint keysym = MapModifier(vk) ?? MapSpecial(vk, extended) ?? MapCharacter(vk, scanCode);
         if (keysym == 0) return;
-        _pressed[id] = keysym; // a repeat keeps the first keysym
+        _pressed[id] = keysym;
         output.Add((keysym, true));
     }
 
@@ -63,8 +94,36 @@ internal sealed unsafe class KeyMapper
     {
         foreach (uint keysym in _pressed.Values) output.Add((keysym, false));
         _pressed.Clear();
-        _lshift = _rshift = _lctrl = _rctrl = _lalt = _ralt = _lwin = _rwin = false;
+        _lshift = _rshift = _lctrl = _rctrl = _lalt = _ralt = _lwin = _rwin = _altGr = false;
     }
+
+    /// <summary>
+    /// Brings the modifiers Vesper believes are held in line with what Windows says (keys pressed
+    /// or released while another window had focus), adding the presses and releases to send.
+    /// <paramref name="currentVk"/> is the key being handled, which is left to its own event.
+    /// </summary>
+    public void Sync(uint currentVk, List<(uint Keysym, bool Down)> output)
+    {
+        Fix(VkLShift, _lshift, VkShift);
+        Fix(VkRShift, _rshift, VkShift);
+        if (!_altGr)
+        {
+            Fix(VkLControl, _lctrl, VkControl);
+            Fix(VkRControl, _rctrl, VkControl);
+            Fix(VkLMenu, _lalt, VkMenu);
+            Fix(VkRMenu, _ralt, VkMenu);
+        }
+
+        void Fix(uint vk, bool tracked, uint generic)
+        {
+            if (currentVk == vk || currentVk == generic) return;
+            bool actual = (Native.GetKeyState((int)vk) & 0x8000) != 0;
+            if (actual != tracked) Translate(vk, 0, vk is VkRControl or VkRMenu, actual, output);
+        }
+    }
+
+    private static bool IsModifier(uint vk) =>
+        vk is VkLShift or VkRShift or VkLControl or VkRControl or VkLMenu or VkRMenu or VkLWin or VkRWin or VkCapital;
 
     /// <summary>The keysym the given Windows modifier sends under the current layout.</summary>
     public uint? MapModifier(uint vk) => (vk, Layout) switch
@@ -124,9 +183,10 @@ internal sealed unsafe class KeyMapper
 
         byte* state = stackalloc byte[256];
         new Span<byte>(state, 256).Clear();
-        // Ctrl and the Windows key are Command and Control in either layout.
-        bool shortcut = CtrlDown || WinDown;
+        // Ctrl and the Windows key are Command and Control in either layout (AltGr's Ctrl isn't).
+        bool shortcut = (CtrlDown || WinDown) && !_altGr;
         if (ShiftDown) state[VkShift] = 0x80;
+        if (_altGr) state[VkControl] = state[VkLControl] = state[VkMenu] = state[VkRMenu] = 0x80;
         if (!shortcut && (Native.GetKeyState((int)VkCapital) & 1) != 0) state[VkCapital] = 0x01;
 
         char* buffer = stackalloc char[4];

@@ -134,6 +134,8 @@ internal sealed class ClipboardBridge : IDisposable
             if (text == _lastFromMac || text == _lastToMac) return;
             if (_clipboard() is not { } clipboard) return;
             _lastFromMac = text;
+            // What was last sent is no longer on the Mac's clipboard: sending it again is a new copy.
+            _lastToMac = null;
             var item = new DataTransferItem();
             item.SetText(text);
             // Clipboard history managers that honour it (Klipper, and others) don't keep this.

@@ -47,8 +47,18 @@ public partial class App : Application
     /// <summary>Something found at startup that the user needs to hear about, shown by the main window once.</summary>
     internal string? StartupWarning { get; set; }
 
+    private SingleInstance? _instance;
+
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        // One Vesper: launching it again brings this one's window forward instead.
+        var dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+        _instance = SingleInstance.Claim(Data.Directory, () => dispatcher.TryEnqueue(ShowMain));
+        if (_instance is null)
+        {
+            Exit();
+            return;
+        }
         Vault = new SecretVault(Data.VaultPath, new Security.DpapiProtector(), new WindowsHello()) { RequireHello = Data.Settings.RequireWindowsHello };
         CheckVault();
         Connections = new ConnectionService(Data, Vault);
@@ -62,7 +72,8 @@ public partial class App : Application
         _lockTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
         _lockTimer.Tick += (_, _) =>
         {
-            if (Sessions.Count > 0) _lastSessionActivity = DateTime.Now;
+            // A session window left on "Disconnected" doesn't keep saved passwords unlocked.
+            if (Sessions.Any(s => s.IsConnected)) _lastSessionActivity = DateTime.Now;
             else if (Vault.IsUnlocked && DateTime.Now - _lastSessionActivity > TimeSpan.FromMinutes(Data.Settings.LockAfterMinutes))
             {
                 Vault.Lock();
@@ -110,7 +121,13 @@ public partial class App : Application
     internal void MainClosed()
     {
         _main = null;
-        if (Sessions.Count == 0) InstallOnExit();
+        LastWindowCheck();
+    }
+
+    /// <summary>When the last of Vesper's windows has closed, the app is quitting.</summary>
+    internal void LastWindowCheck()
+    {
+        if (_main is null && Sessions.Count == 0 && !SettingsWindow.IsOpen) InstallOnExit();
     }
 
     internal void SessionOpened(SessionWindow window) => Sessions.Add(window);
@@ -120,7 +137,7 @@ public partial class App : Application
         Sessions.Remove(window);
         _lastSessionActivity = DateTime.Now;
         _main?.Refresh();
-        if (_main is null && Sessions.Count == 0) InstallOnExit();
+        LastWindowCheck();
     }
 
     /// <summary>Installs the downloaded update and quits; Vesper opens again on the new version.</summary>
@@ -151,7 +168,7 @@ public partial class App : Application
         _installStarted = true;
         try
         {
-            UpdateInstaller.InstallAsync(offer, file, relaunch: false).GetAwaiter().GetResult();
+            UpdateInstaller.InstallOnExit(offer, file);
         }
         catch (Exception e)
         {

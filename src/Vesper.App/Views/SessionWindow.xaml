@@ -102,7 +102,7 @@
                 </ToggleButton>
 
                 <Button x:Name="FullScreenButton" Style="{StaticResource VesperToolbarButtonStyle}" Click="FullScreen_Click"
-                        ToolTipService.ToolTip="Full screen (F11)" AutomationProperties.Name="Full screen">
+                        ToolTipService.ToolTip="Full screen (Ctrl+Alt+Enter)" AutomationProperties.Name="Full screen">
                     <FontIcon x:Name="FullScreenIcon" Glyph="&#xE740;" FontSize="15" />
                 </Button>
 
@@ -127,7 +127,7 @@
                       Data="M 50,0 Q 56,44 100,50 Q 56,56 50,100 Q 44,56 0,50 Q 44,44 50,0 Z" />
                 <TextBlock x:Name="FloatingName" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
                 <FontIcon x:Name="FloatingSecurityIcon" Glyph="&#xE72E;" FontSize="12" VerticalAlignment="Center" />
-                <Button Style="{StaticResource VesperToolbarButtonStyle}" Click="FullScreen_Click" ToolTipService.ToolTip="Leave full screen (F11)">
+                <Button Style="{StaticResource VesperToolbarButtonStyle}" Click="FullScreen_Click" ToolTipService.ToolTip="Leave full screen (Ctrl+Alt+Enter)">
                     <FontIcon Glyph="&#xE73F;" FontSize="14" />
                 </Button>
                 <Button Style="{StaticResource VesperToolbarButtonStyle}" Click="Disconnect_Click" ToolTipService.ToolTip="Disconnect">

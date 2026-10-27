@@ -958,6 +958,8 @@ public sealed class RfbSession : IAsyncDisposable
         // Wheel bits: one click per ~40 points. A Mac only scrolls on a mask of exactly the bit.
         const double PointsPerClick = 40;
         byte baseMask = (byte)(held & PointerButtons.Left);
+        if ((held & PointerButtons.Middle) != 0) baseMask |= (byte)(_apple ? 4 : 2);
+        if ((held & PointerButtons.Right) != 0) baseMask |= (byte)(_apple ? 2 : 4);
         while (Math.Abs(_scrollResidualY) >= PointsPerClick)
         {
             byte bit = (byte)(_scrollResidualY > 0 ? 0x10 : 0x08);

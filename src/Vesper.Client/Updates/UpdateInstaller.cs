@@ -23,7 +23,7 @@ public static class UpdateInstaller
         {
             throw new InvalidOperationException("This copy of Vesper can't install updates itself.");
         }
-        if (!await UpdateService.MatchesAsync(file, asset, ct))
+        if (!await UpdateService.MatchesAsync(file, asset, ct).ConfigureAwait(false))
         {
             throw new UpdateRejectedException("The downloaded update changed on disk since it was checked, so it wasn't used.");
         }
@@ -33,7 +33,7 @@ public static class UpdateInstaller
                 RunSetup(file, relaunch);
                 break;
             case InstallKind.WindowsPortable:
-                StagePortable(file, InstallInfo.PortableRoot!, manifest.Version);
+                await Task.Run(() => StagePortable(file, InstallInfo.PortableRoot!, manifest.Version), ct).ConfigureAwait(false);
                 if (relaunch) StartLauncher(InstallInfo.PortableRoot!);
                 break;
             case InstallKind.LinuxAppImage when !OperatingSystem.IsWindows():
@@ -41,13 +41,20 @@ public static class UpdateInstaller
                 if (relaunch) Process.Start(new ProcessStartInfo(image) { UseShellExecute = false });
                 break;
             case InstallKind.LinuxPackage:
-                await RunPacmanAsync(file, ct);
+                await RunPacmanAsync(file, ct).ConfigureAwait(false);
                 if (relaunch) Process.Start(new ProcessStartInfo(InstallInfo.LinuxLauncher) { UseShellExecute = false });
                 break;
             default:
                 throw new InvalidOperationException("This copy of Vesper can't install updates itself.");
         }
     }
+
+    /// <summary>
+    /// Installs while the app is quitting, from a UI thread that's blocked waiting for it: the work
+    /// runs on the thread pool so nothing tries to resume on that thread.
+    /// </summary>
+    public static void InstallOnExit(UpdateManifest manifest, string file) =>
+        Task.Run(() => InstallAsync(manifest, file, relaunch: false)).GetAwaiter().GetResult();
 
     /// <summary>Removes what a finished portable update left behind (the previous app folder).</summary>
     public static void CleanUpAfterUpdate()
@@ -161,7 +168,7 @@ public static class UpdateInstaller
         var start = new ProcessStartInfo(pkexec) { UseShellExecute = false };
         foreach (string arg in new[] { pacman, "-U", "--noconfirm", "--", package }) start.ArgumentList.Add(arg);
         using var process = Process.Start(start) ?? throw new InvalidOperationException("pkexec didn't start.");
-        await process.WaitForExitAsync(ct);
+        await process.WaitForExitAsync(ct).ConfigureAwait(false);
         switch (process.ExitCode)
         {
             case 0:

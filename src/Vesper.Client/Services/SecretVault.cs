@@ -126,8 +126,23 @@ public sealed class SecretVault
         }
     }
 
-    /// <summary>Opens the vault. With Hello required this shows the Hello prompt; false if declined.</summary>
-    public async Task<bool> UnlockAsync()
+    private Task<bool>? _unlocking;
+
+    /// <summary>
+    /// Opens the vault. With Hello required this shows the Hello prompt; false if declined. Callers
+    /// asking while an unlock is under way share it (one prompt, not one per window).
+    /// </summary>
+    public Task<bool> UnlockAsync()
+    {
+        if (IsUnlocked) return Task.FromResult(true);
+        lock (_sync)
+        {
+            if (_unlocking is { IsCompleted: false } pending) return pending;
+            return _unlocking = UnlockOnceAsync();
+        }
+    }
+
+    private async Task<bool> UnlockOnceAsync()
     {
         if (IsUnlocked) return true;
         if (!CanSave) throw new InvalidOperationException(UnavailableReason);

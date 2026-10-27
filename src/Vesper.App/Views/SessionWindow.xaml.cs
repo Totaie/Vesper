@@ -60,6 +60,11 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
     private static readonly TimeSpan[] ReconnectDelays = [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(15)];
     private int _reconnectAttempt;
     private bool _wasSecured;
+    private DateTime _securedAt;
+    private PointerButtons _heldButtons;
+    private int _lastX, _lastY;
+    private bool _overFloatingBar;
+    private bool _connecting;
     private CancellationTokenSource? _reconnectWait;
 
     internal static void Open(MacProfile profile, string? password)
@@ -113,7 +118,13 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         Closed += OnClosed;
         _statsTimer.Tick += (_, _) => UpdateStats();
         _refitTimer.Tick += (_, _) => Refit();
-        _floatingTimer.Tick += (_, _) => { _floatingTimer.Stop(); if (_fullScreen) FloatingBar.Visibility = Visibility.Collapsed; };
+        _floatingTimer.Tick += (_, _) =>
+        {
+            _floatingTimer.Stop();
+            if (_overFloatingBar) _floatingTimer.Start(); // not while it's being used
+            else if (_fullScreen) FloatingBar.Visibility = Visibility.Collapsed;
+        };
+        FloatingBar.PointerEntered += (_, _) => _overFloatingBar = true;
 
         Root.Loaded += async (_, _) =>
         {
@@ -139,6 +150,23 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
 
     private async Task ConnectAsync(bool automatic = false)
     {
+        if (_connecting || _connection is not null) return;
+        _connecting = true;
+        try
+        {
+            await ConnectCoreAsync(automatic);
+        }
+        finally
+        {
+            _connecting = false;
+        }
+    }
+
+    private async Task ConnectCoreAsync(bool automatic)
+    {
+        // The Mac may have been edited from the home window since this window opened.
+        if (App.Current.Data.Find(_profile.Id) is { } stored && !ReferenceEquals(stored, _profile)) CopyProfile(stored, _profile);
+        _keys.Layout = _profile.Modifiers;
         ShowConnecting(automatic);
         string? password = _password;
         _password = null;
@@ -195,7 +223,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
                 return;
             }
             _password = _typedPassword.Value.Password;
-            await ConnectAsync();
+            await ConnectCoreAsync(false);
             return;
         }
         catch (SavedPasswordWithheldException e)
@@ -208,7 +236,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
                 return;
             }
             _password = _typedPassword.Value.Password;
-            await ConnectAsync();
+            await ConnectCoreAsync(false);
             return;
         }
         catch (OperationCanceledException) when (_closing)
@@ -222,13 +250,14 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
             Diagnostics.Add($"Connection to {_profile.Host} timed out during a trust prompt; retrying.");
             // A saved password is fetched (and judged as saved) again, never passed on as typed.
             _password = fromVault ? null : password;
-            await ConnectAsync();
+            await ConnectCoreAsync(false);
             return;
         }
         catch (Exception e) when (automatic && IsDrop(e) && !_closing)
         {
             Diagnostics.Add($"Reconnecting to {_profile.Host} failed: {e.GetType().Name}: {e.Message}");
-            await ReconnectSoonAsync(Explain(e, duringSession: true));
+            // After this attempt has finished, so the next one isn't refused as a second connection.
+            _ = ReconnectSoonAsync(Explain(e, duringSession: true));
             return;
         }
         catch (Exception e)
@@ -308,7 +337,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         ShowSecurity(connection.Security, session.Info);
         Remember(p => p.LastConnected = DateTimeOffset.Now);
         _wasSecured = true;
-        _reconnectAttempt = 0;
+        _securedAt = DateTime.UtcNow;
         Overlay.Visibility = Visibility.Collapsed;
         Surface.Focus(FocusState.Programmatic);
         UpdateHook();
@@ -335,13 +364,24 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         {
             if (e is SecurityRefusedException) title = "Connection stopped";
             reason = Explain(e, duringSession: true);
-            dropped = IsDrop(e);
+            // The network failing, not the Mac ending the session (a clean close is someone at the
+            // Mac disconnecting Vesper, which mustn't bring it straight back).
+            dropped = e is IOException or SocketException or TimeoutException;
             Diagnostics.Add($"Session with {_profile.Host} ended: {e.GetType().Name}: {e.Message}");
         }
         if (_closing) return;
+        if (_connection != connection)
+        {
+            // A connection that lost a race to another: close it, leave the live one alone.
+            await connection.DisposeAsync();
+            return;
+        }
         await TearDownAsync();
         if (dropped && _wasSecured && _profile.HasSavedPassword)
         {
+            // A session that stayed up a while starts the retries afresh; one that keeps dying at
+            // once runs out of them.
+            if (DateTime.UtcNow - _securedAt > TimeSpan.FromSeconds(30)) _reconnectAttempt = 0;
             await ReconnectSoonAsync(reason);
             return;
         }
@@ -884,6 +924,8 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
 
     private void OnPointerPressed(object sender, PointerRoutedEventArgs e)
     {
+        // Ctrl held from before the window had focus is still a Command-click.
+        SyncModifiers(0);
         Surface.Focus(FocusState.Pointer);
         Surface.CapturePointer(e.Pointer);
         OnPointer(sender, e);
@@ -894,8 +936,18 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         var point = e.GetCurrentPoint(Surface);
         if (_fullScreen && point.Position.Y < 4) RevealFloatingBar();
         if (_connection is null || !ToFramebuffer(point.Position, out int x, out int y)) return;
-        _connection.Session.SendPointer(x, y, Buttons(point.Properties));
+        _heldButtons = Buttons(point.Properties);
+        (_lastX, _lastY) = (x, y);
+        _connection.Session.SendPointer(x, y, _heldButtons);
         e.Handled = true;
+    }
+
+    /// <summary>Lets go of the mouse buttons on the Mac (the window lost focus mid-drag).</summary>
+    private void ReleaseButtons()
+    {
+        if (_heldButtons == PointerButtons.None) return;
+        _heldButtons = PointerButtons.None;
+        _connection?.Session.SendPointer(_lastX, _lastY, PointerButtons.None);
     }
 
     private void OnWheel(object sender, PointerRoutedEventArgs e)
@@ -919,7 +971,11 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
     private void OnActivated(object sender, WindowActivatedEventArgs e)
     {
         _active = e.WindowActivationState != WindowActivationState.Deactivated;
-        if (!_active) ReleaseKeys();
+        if (!_active)
+        {
+            ReleaseKeys();
+            ReleaseButtons();
+        }
         _clipboard?.SetActive(_active);
         UpdateHook();
     }
@@ -962,6 +1018,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
     {
         if (_connection is null || _hook.IsInstalled) return;
         if (HandleLocalShortcut((uint)e.Key, true)) { e.Handled = true; return; }
+        SyncModifiers((uint)e.Key);
         Send((uint)e.Key, e.KeyStatus.ScanCode, e.KeyStatus.IsExtendedKey, true);
         e.Handled = true;
     }
@@ -997,6 +1054,18 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
     {
         _keyBuffer.Clear();
         _keys.Translate(vk, scanCode, extended, down, _keyBuffer);
+        if (_connection is not { } c) return;
+        foreach (var (keysym, isDown) in _keyBuffer) c.Session.SendKey(keysym, isDown);
+    }
+
+    /// <summary>
+    /// Tells the Mac about modifiers pressed or let go while Vesper wasn't looking (in another
+    /// window, or during a local shortcut), so a held Ctrl still makes the next key a shortcut.
+    /// </summary>
+    private void SyncModifiers(uint currentVk)
+    {
+        _keyBuffer.Clear();
+        _keys.Sync(currentVk, _keyBuffer);
         if (_connection is not { } c) return;
         foreach (var (keysym, isDown) in _keyBuffer) c.Session.SendKey(keysym, isDown);
     }
@@ -1108,6 +1177,7 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
 
     private void FloatingBar_PointerExited(object sender, PointerRoutedEventArgs e)
     {
+        _overFloatingBar = false;
         _floatingTimer.Stop();
         _floatingTimer.Start();
     }
@@ -1158,12 +1228,17 @@ public sealed partial class SessionWindow : Window, ITrustPrompts
         _closing = true;
         _reconnectWait?.Cancel();
         _floatingTimer.Stop();
+        // First, while the app is surely still running: if this was the last window, quitting
+        // installs a waiting update.
+        App.Current.SessionClosed(this);
         await TearDownAsync();
         _renderer.Dispose();
         _cursors.Dispose();
         _hook.Dispose();
-        App.Current.SessionClosed(this);
     }
+
+    /// <summary>Whether a session is up (the vault stays unlocked only for those).</summary>
+    internal bool IsConnected => _connection is not null;
 }
 
 public enum StepState { Pending, Active, Done }

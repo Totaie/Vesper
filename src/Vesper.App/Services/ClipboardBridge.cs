@@ -125,6 +125,8 @@ internal sealed class ClipboardBridge : IDisposable
             if (_disposed || !_enabled || !inFront) return;
             if (text == _lastFromMac || text == _lastToMac) return;
             _lastFromMac = text;
+            // What was last sent is no longer on the Mac's clipboard: sending it again is a new copy.
+            _lastToMac = null;
             var package = new DataPackage { RequestedOperation = DataPackageOperation.Copy };
             package.SetText(text);
             try

@@ -34,7 +34,7 @@ internal sealed class SessionRenderer : IDisposable
     private Framebuffer? _bitmapSource;
     private Framebuffer? _framebuffer;
     private byte[] _staging = [];
-    private bool _redraw = true;
+    private int _redraw = 1; // set by any thread, taken by the render thread
 
     // The view, written by the UI thread.
     private double _viewWidth, _viewHeight, _rasterScale = 1;
@@ -47,7 +47,7 @@ internal sealed class SessionRenderer : IDisposable
         _device = CanvasDevice.GetSharedDevice();
         var compositor = view.Visual.Compositor;
         _graphics = CanvasComposition.CreateCompositionGraphicsDevice(compositor, _device);
-        _graphics.RenderingDeviceReplaced += (_, _) => { _redraw = true; _wake.Set(); };
+        _graphics.RenderingDeviceReplaced += (_, _) => { Volatile.Write(ref _redraw, 1); _wake.Set(); };
         _surface = _graphics.CreateDrawingSurface(new Size(1, 1),
             Microsoft.Graphics.DirectX.DirectXPixelFormat.B8G8R8A8UIntNormalized, Microsoft.Graphics.DirectX.DirectXAlphaMode.Premultiplied);
         var brush = compositor.CreateSurfaceBrush(_surface);
@@ -68,7 +68,7 @@ internal sealed class SessionRenderer : IDisposable
         if (_framebuffer is not null) _framebuffer.Changed -= OnFramebufferChanged;
         _framebuffer = framebuffer;
         framebuffer.Changed += OnFramebufferChanged;
-        _redraw = true;
+        Volatile.Write(ref _redraw, 1);
         _wake.Set();
     }
 
@@ -90,7 +90,7 @@ internal sealed class SessionRenderer : IDisposable
     public void SetScaling(ViewScaling scaling)
     {
         lock (_viewLock) _scaling = scaling;
-        _redraw = true;
+        Volatile.Write(ref _redraw, 1);
         _wake.Set();
     }
 
@@ -98,7 +98,7 @@ internal sealed class SessionRenderer : IDisposable
     public void SetPan(Point pan)
     {
         lock (_viewLock) _pan = pan;
-        _redraw = true;
+        Volatile.Write(ref _redraw, 1);
         _wake.Set();
     }
 
@@ -157,7 +157,7 @@ internal sealed class SessionRenderer : IDisposable
                 _bitmap?.Dispose();
                 _bitmap = null;
                 _bitmapGeneration = -1;
-                _redraw = true;
+                Volatile.Write(ref _redraw, 1);
                 Thread.Sleep(50);
             }
             long now = clock.ElapsedMilliseconds;
@@ -191,14 +191,14 @@ internal sealed class SessionRenderer : IDisposable
             CanvasComposition.Resize(_surface, new Size(width, height));
             _surfaceWidth = width;
             _surfaceHeight = height;
-            _redraw = true;
+            Volatile.Write(ref _redraw, 1);
         }
-        if (viewChanged) _redraw = true;
+        if (viewChanged) Volatile.Write(ref _redraw, 1);
 
         var fb = _framebuffer;
         bool uploaded = fb is not null && Upload(fb);
-        if (!uploaded && !_redraw) return false;
-        _redraw = false;
+        bool redraw = Interlocked.Exchange(ref _redraw, 0) != 0;
+        if (!uploaded && !redraw) return false;
 
         // Drawn in physical pixels (the surface's own units).
         using (var ds = CanvasComposition.CreateDrawingSession(_surface))
@@ -278,7 +278,7 @@ internal sealed class SessionRenderer : IDisposable
         _device = CanvasDevice.GetSharedDevice();
         CanvasComposition.SetCanvasDevice(_graphics, _device);
         _framebuffer?.InvalidateAll();
-        _redraw = true;
+        Volatile.Write(ref _redraw, 1);
     }
 
     public void Dispose()
@@ -286,7 +286,8 @@ internal sealed class SessionRenderer : IDisposable
         _running = false;
         _wake.Set();
         if (_framebuffer is not null) _framebuffer.Changed -= OnFramebufferChanged;
-        _thread.Join(1000);
+        // A render thread still finishing a frame keeps its resources until it's done.
+        if (!_thread.Join(1000)) return;
         _bitmap?.Dispose();
         _surface.Dispose();
         _graphics.Dispose();

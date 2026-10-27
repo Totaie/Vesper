@@ -63,6 +63,13 @@ public sealed partial class App : Application
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            // One Vesper: launching it again brings this one's window forward instead.
+            _instance = SingleInstance.Claim(Data.Directory, () => Dispatcher.UIThread.Post(ShowMain));
+            if (_instance is null)
+            {
+                desktop.Shutdown();
+                return;
+            }
             _main = new MainWindow();
             desktop.MainWindow = _main;
             desktop.Exit += (_, _) => InstallOnExit();
@@ -72,7 +79,8 @@ public sealed partial class App : Application
         _lockTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
         _lockTimer.Tick += (_, _) =>
         {
-            if (Sessions.Count > 0) _lastSessionActivity = DateTime.Now;
+            // A session window left on "Disconnected" doesn't keep saved passwords unlocked.
+            if (Sessions.Any(s => s.IsConnected)) _lastSessionActivity = DateTime.Now;
             else if (Vault.IsUnlocked && DateTime.Now - _lastSessionActivity > TimeSpan.FromMinutes(Data.Settings.LockAfterMinutes))
             {
                 Vault.Lock();
@@ -106,6 +114,20 @@ public sealed partial class App : Application
 
     internal void MainClosed() => _main = null;
 
+    private SingleInstance? _instance;
+
+    /// <summary>Brings the home window back (another launch asked for it), opening it if it was closed.</summary>
+    internal void ShowMain()
+    {
+        if (_main is null)
+        {
+            _main = new MainWindow();
+            _main.Show();
+        }
+        if (_main.WindowState == WindowState.Minimized) _main.WindowState = WindowState.Normal;
+        _main.Activate();
+    }
+
     private bool _installStarted;
 
     /// <summary>
@@ -120,7 +142,7 @@ public sealed partial class App : Application
         _installStarted = true;
         try
         {
-            UpdateInstaller.InstallAsync(offer, file, relaunch: false).GetAwaiter().GetResult();
+            UpdateInstaller.InstallOnExit(offer, file);
         }
         catch (Exception e)
         {

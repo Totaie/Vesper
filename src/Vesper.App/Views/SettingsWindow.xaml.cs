@@ -11,6 +11,8 @@ namespace Vesper.Views;
 public sealed partial class SettingsWindow : Window
 {
     private static SettingsWindow? s_open;
+
+    internal static bool IsOpen => s_open is not null;
     private bool _loading = true;
 
     public static void Show()
@@ -33,6 +35,7 @@ public sealed partial class SettingsWindow : Window
         {
             App.Current.Updates.Changed -= OnUpdateChanged;
             s_open = null;
+            App.Current.LastWindowCheck();
         };
         Root.RequestedTheme = App.ThemeFor(Settings.Theme);
 

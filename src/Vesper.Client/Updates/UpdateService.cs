@@ -38,6 +38,7 @@ public sealed class UpdateService : IDisposable
     private const int MaxManifestBytes = 64 * 1024;
     private static readonly TimeSpan FirstCheck = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan Interval = TimeSpan.FromHours(12);
+    private static readonly TimeSpan StallTimeout = TimeSpan.FromSeconds(60);
 
     private readonly AppData _data;
     private readonly Version _current;
@@ -114,14 +115,22 @@ public sealed class UpdateService : IDisposable
     public async Task CheckAsync(bool manual, CancellationToken ct = default)
     {
         if (Status is UpdateStatus.Ready && !manual) return;
-        if (!await _gate.WaitAsync(0, ct)) return;
+        if (!await _gate.WaitAsync(0, ct).ConfigureAwait(false)) return;
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _stop.Token);
+        // A download that's already checked and waiting stays ready whatever this check finds.
+        var ready = Status == UpdateStatus.Ready ? (Offer, DownloadedFile) : default;
         try
         {
             Error = null;
             Set(UpdateStatus.Checking);
-            var manifest = await FetchManifestAsync(linked.Token);
+            var manifest = await FetchManifestAsync(linked.Token).ConfigureAwait(false);
             LastChecked = DateTimeOffset.Now;
+            if (ready.Offer is { } waiting && manifest.ParsedVersion <= waiting.ParsedVersion)
+            {
+                (Offer, DownloadedFile) = ready;
+                Set(UpdateStatus.Ready);
+                return;
+            }
             if (manifest.ParsedVersion <= _current || (!manual && manifest.Version == _data.Settings.SkippedVersion))
             {
                 Offer = null;
@@ -135,23 +144,36 @@ public sealed class UpdateService : IDisposable
                 return;
             }
             Set(UpdateStatus.Downloading);
-            DownloadedFile = await DownloadAsync(asset, manifest, linked.Token);
+            DownloadedFile = await DownloadAsync(asset, manifest, linked.Token).ConfigureAwait(false);
             Set(UpdateStatus.Ready);
             Diagnostics.Add($"Update {manifest.Version} downloaded and checked; it installs when Vesper restarts.");
         }
         catch (OperationCanceledException) when (linked.IsCancellationRequested)
         {
-            Set(UpdateStatus.Idle);
+            Restore(UpdateStatus.Idle);
         }
         catch (Exception e)
         {
             Error = Describe(e);
             Diagnostics.Add($"Update check failed: {e.GetType().Name}: {e.Message}");
-            Set(UpdateStatus.Failed);
+            Restore(UpdateStatus.Failed);
         }
         finally
         {
             _gate.Release();
+        }
+
+        void Restore(UpdateStatus otherwise)
+        {
+            if (ready.Offer is not null)
+            {
+                (Offer, DownloadedFile) = ready;
+                Set(UpdateStatus.Ready);
+            }
+            else
+            {
+                Set(otherwise);
+            }
         }
     }
 
@@ -206,31 +228,36 @@ public sealed class UpdateService : IDisposable
         {
             TryDelete(old); // earlier versions' downloads
         }
-        if (File.Exists(target) && await MatchesAsync(target, asset, ct)) return target;
+        if (File.Exists(target) && await MatchesAsync(target, asset, ct).ConfigureAwait(false)) return target;
 
         string partial = target + ".partial";
         try
         {
             var uri = new Uri($"https://github.com/{Repository}/releases/download/v{manifest.Version}/{Uri.EscapeDataString(asset.File)}");
-            using var response = await _http.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, ct);
+            // No single read may stall for long: a sleep or network change mid-download otherwise
+            // leaves it "downloading" for ever.
+            using var stall = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            stall.CancelAfter(StallTimeout);
+            using var response = await _http.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, stall.Token).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
             if (response.Content.Headers.ContentLength is { } length && length != asset.Size)
             {
                 throw new UpdateRejectedException("The download isn't the size the signed description gives.");
             }
             using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-            await using (var source = await response.Content.ReadAsStreamAsync(ct))
+            await using (var source = await response.Content.ReadAsStreamAsync(stall.Token).ConfigureAwait(false))
             await using (var file = new FileStream(partial, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16, useAsync: true))
             {
                 byte[] buffer = new byte[1 << 16];
                 long total = 0;
                 int n;
-                while ((n = await source.ReadAsync(buffer, ct)) > 0)
+                while ((n = await source.ReadAsync(buffer, stall.Token).ConfigureAwait(false)) > 0)
                 {
+                    stall.CancelAfter(StallTimeout);
                     total += n;
                     if (total > asset.Size) throw new UpdateRejectedException("The download is larger than the signed description says.");
                     hash.AppendData(buffer, 0, n);
-                    await file.WriteAsync(buffer.AsMemory(0, n), ct);
+                    await file.WriteAsync(buffer.AsMemory(0, n), ct).ConfigureAwait(false);
                     double progress = (double)total / asset.Size;
                     if (progress - Progress >= 0.01 || total == asset.Size)
                     {
@@ -260,7 +287,7 @@ public sealed class UpdateService : IDisposable
         {
             await using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16, useAsync: true);
             if (file.Length != asset.Size) return false;
-            byte[] digest = await SHA256.HashDataAsync(file, ct);
+            byte[] digest = await SHA256.HashDataAsync(file, ct).ConfigureAwait(false);
             return Convert.ToHexStringLower(digest) == asset.Sha256;
         }
         catch (IOException)

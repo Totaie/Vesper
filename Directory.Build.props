@@ -7,7 +7,7 @@
     <Company>Totaie</Company>
     <Product>Vesper</Product>
     <Copyright>Copyright (c) 2026 Totaie</Copyright>
-    <Version>0.2.2</Version>
+    <Version>0.2.3</Version>
     <!-- Supply chain: restore must match the committed lock files (always in CI and for Release
          builds, which is what's published), and known-vulnerable packages (direct or transitive)
          fail the build. -->
